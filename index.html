@@ -1,0 +1,310 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>2027 유럽 10일 – 스마트 플래너</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<style>
+:root{--bg:#f4f8fc;--card:#fff;--tx:#1b2a3a;--mu:#5d6d7e;--ac:#2f7de1;--bd:#d9e4f0;--sea:#e6f0fb}
+body{margin:0;background:var(--bg);color:var(--tx);font-family:-apple-system,sans-serif;height:100vh;overflow:hidden}
+.main-wrapper{display:flex;height:100vh}
+@media(max-width:850px){.main-wrapper{flex-direction:column}}
+#map-section{flex:1.2;position:relative;border-right:1px solid var(--bd)}
+#map{height:100%;width:100%}
+#info-section{flex:1;display:flex;flex-direction:column;background:var(--bg);overflow:hidden}
+.sticky-header{flex:none;background:var(--card);border-bottom:1px solid var(--bd);z-index:10}
+.header-main{padding:16px}
+.tabs{display:flex;gap:6px;overflow-x:auto;padding:0 16px 10px}
+.tabs button{flex:none;border:1px solid var(--bd);background:var(--card);border-radius:12px;padding:6px 14px;cursor:pointer}
+.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+.f-tabs{display:flex;background:var(--sea);padding:4px;border-radius:12px;margin:0 16px 12px}
+.f-tabs button{flex:1;border:0;background:transparent;padding:8px 2px;cursor:pointer;font-size:.78rem;white-space:nowrap}
+.f-tabs button.on{background:var(--card);color:var(--ac);font-weight:bold;border-radius:8px}
+#view{flex:1;overflow-y:auto;padding:16px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:20px;padding:20px;margin-bottom:16px}
+.b{background:var(--ac);color:#fff;border:0;border-radius:10px;padding:12px;width:100%;cursor:pointer;font-weight:bold;margin-top:10px}
+.b.h{background:#fff;color:var(--ac);border:1px solid var(--ac);font-weight:normal;text-align:left;font-size:.82rem;padding:8px}
+textarea,input,select{box-sizing:border-box;border:1px solid var(--bd);border-radius:10px;padding:9px;font-family:inherit;font-size:.9rem;background:#fff;color:var(--tx)}
+textarea{width:100%;border-radius:12px;padding:12px;margin-top:10px;resize:none}
+.expense-row{display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--bd)}
+.pin,.num{width:26px;height:26px;border-radius:50%;background:#2f7de1;color:#fff;border:2px solid #fff;font:700 12px/22px sans-serif;text-align:center;box-sizing:border-box}
+.num{flex:none;border:0;line-height:26px}
+.pin.f,.num.f{background:#e8590c}.pin.c,.num.c{background:#8b5a2b}.pin.e,.num.e{background:#2e9e5b}
+.bg{background:#d9f2e0;color:#0a7a33;border-radius:10px;padding:2px 8px;font-size:.72rem;margin-left:6px;font-weight:normal;vertical-align:middle}
+.pl{display:flex;align-items:center;gap:8px;padding:10px 0;border-top:1px solid #eee;flex-wrap:wrap}
+.nm{flex:1;min-width:130px}
+.tag{font-size:.7rem;border-radius:8px;padding:1px 6px;background:#d9f2e0;color:#0a7a33;margin-left:4px}.tag.g{background:#eee;color:#777}
+.ctl{display:flex;gap:4px}.ctl button{border:1px solid var(--bd);background:#fff;border-radius:8px;padding:4px 8px;cursor:pointer}.ctl select{padding:4px}
+.row2{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
+.lk{border:1px solid var(--bd);background:#fff;border-radius:8px;padding:4px 8px;text-decoration:none;font-size:.85rem}
+.sticky-header{position:relative;overflow:hidden;background:linear-gradient(135deg,#1d3b78 0%,#2f7de1 60%,#7ab8f5 100%);border-bottom:0}
+.sticky-header::before{content:"";position:absolute;top:0;left:0;right:0;height:5px;background:linear-gradient(90deg,#0055a4 33.3%,#fff 33.3% 66.6%,#ef4135 66.6%);z-index:2}
+.sticky-header::after{content:"";position:absolute;left:0;right:0;bottom:0;height:70px;background:url("data:image/svg+xml,%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%20540%2060'%20preserveAspectRatio='xMinYMax%20slice'%3E%3Cg%20fill='white'%3E%3Cpath%20d='M62%2060L74%2018L77%204L80%2018L92%2060L86%2060L80%2034L74%2034L68%2060Z'/%3E%3Crect%20x='70'%20y='30'%20width='14'%20height='2'/%3E%3Cpath%20d='M140%2060V26L146%204L152%2026V60ZM160%2060V26L166%204L172%2026V60ZM140%2040H172V60H140Z'/%3E%3Cpath%20d='M200%2060V38L210%2028L220%2038V60ZM220%2060V32L232%2020L244%2032V60ZM244%2060V40L252%2032L260%2040V60Z'/%3E%3Ccircle%20cx='320'%20cy='30'%20r='5'/%3E%3Ccircle%20cx='308'%20cy='44'%20r='5'/%3E%3Ccircle%20cx='332'%20cy='44'%20r='5'/%3E%3Ccircle%20cx='320'%20cy='52'%20r='5'/%3E%3Ccircle%20cx='320'%20cy='42'%20r='5'/%3E%3Cpath%20d='M360%2060L366%2034H374L380%2060Z'/%3E%3Cpath%20d='M420%2060V36H434V60ZM418%2036L427%2022L436%2036Z'/%3E%3Cpath%20d='M470%2060V26H482V60ZM488%2060V26H500V60ZM482%2038H488V60H482Z'/%3E%3C/g%3E%3Cg%20stroke='white'%20stroke-width='2'%3E%3Cpath%20d='M370%2034L356%2020M370%2034L384%2020M370%2034L356%2048M370%2034L384%2048'/%3E%3Cpath%20d='M320%2030L308%2044M320%2030L332%2044M308%2044H332M320%2042V52'/%3E%3C/g%3E%3C/svg%3E") repeat-x left bottom/540px 60px;opacity:.22;pointer-events:none}
+.header-main,.tabs,.f-tabs{position:relative;z-index:1}
+.header-main h1{color:#fff;font-family:Georgia,"Times New Roman",serif;letter-spacing:.5px}
+.header-main p{color:#dbe8fb!important}
+.tabs button.on{background:#ffd166;color:#1b2a3a;border-color:#ffd166}
+#info-section{background:linear-gradient(180deg,#e3effc 0,#f4f8fc 260px)}
+.card{box-shadow:0 2px 12px rgba(30,60,120,.09)}
+.b{background:linear-gradient(135deg,#2f7de1,#1d5fc4)}
+</style>
+</head>
+<body>
+<div class="main-wrapper">
+<div id="map-section"><div id="map"></div></div>
+<div id="info-section">
+<div class="sticky-header">
+<div class="header-main">
+<h1 style="font-size:1.1rem;margin:0">🇪🇺 유럽 여행 공동 플래너<span class="bg">공동 편집</span></h1>
+<p style="font-size:.8rem;color:var(--mu);margin:4px 0 0" id="sync-status">김예림 & 전은경 전용</p>
+</div>
+<div class="tabs" id="day-tabs"></div>
+<div class="f-tabs" id="feature-tabs">
+<button data-f="info" class="on" onclick="setF('info')">📋 일정</button>
+<button data-f="rest" onclick="setF('rest')">🍴 식당</button>
+<button data-f="stay" onclick="setF('stay')">🛏️ 숙소</button>
+<button data-f="money" onclick="setF('money')">💰 정산</button>
+<button data-f="check" onclick="setF('check')">✅ 준비물</button>
+</div>
+</div>
+<div id="view"></div>
+</div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+<script>
+const GAS_URL="https://script.google.com/macros/s/AKfycbyKjR9esF9OZDWL19tGMZKzD6IlPAho9H624_YLb7735r_7okYGExB0t_-sojZWn7it/exec";
+
+const D=[
+["2/15 (월)","인천 출발",[["인천국제공항",37.4602,126.4407]]],
+["2/16 (화)","파리 도착 + 라파예트 + 개선문",[["샤를드골 공항",49.0097,2.5479],["갤러리 라파예트(옥상 전망)",48.8738,2.332],["샹드마르스 공원",48.8556,2.2986],["에펠탑",48.8584,2.2945],["트로카데로 광장(일몰)",48.8616,2.2874],["개선문(야경)",48.8738,2.295]]],
+["2/17 (수)","시테섬 + 미술관 (저녁 유람선)",[["노트르담 대성당(외관·시테섬)",48.853,2.3499],["생트샤펠(시테섬·선택)",48.8554,2.345],["카페 드 플로르(점심·휴식)",48.8542,2.3326],["오르세 미술관",48.86,2.3266],["센 강 유람선(저녁)",48.8606,2.2936]]],
+["2/18 (목)","몽마르트르 + 샹젤리제 + 라발레 빌리지",[["몽마르트르 사크레쾨르(오전)",48.8867,2.3431],["샹젤리제 거리",48.8698,2.3076],["라 발레 빌리지(RER A 약 45분)",48.873,2.781]]],
+["2/19 (금)","파리 → 콜마르 → 스트라스부르",[["파리 동역(이른 출발)",48.8768,2.3592],["머리의 집",48.0786,7.3588],["쁘띠 베니스",48.0745,7.3565],["스트라스부르 대성당",48.5819,7.7507],["쁘띠 프랑스(저녁)",48.5802,7.7385]]],
+["2/20 (토)","스트라스부르 → 하이델베르크 → 브뤼셀",[["스트라스부르 대성당",48.5819,7.7507],["하이델베르크 성",49.4106,8.7153],["알테 브뤼케",49.4128,8.7089],["하이델베르크 구시가지",49.4097,8.7064],["브뤼셀 그랑플라스",50.8467,4.3525]]],
+["2/21 (일)","벨기에 브뤼셀",[["그랑플라스",50.8467,4.3525],["갈레리 생튀베르",50.8479,4.3544],["몽데자르",50.8446,4.3569],["아토미움",50.8949,4.3415]]],
+["2/22 (월)","독일 쾰른 당일치기",[["브뤼셀 미디역",50.8355,4.3364],["쾰른 대성당",50.9413,6.9583],["라인 강변 산책로",50.9388,6.968],["초콜릿 박물관",50.9323,6.9647],["프뤼 암 돔(맥주)",50.9406,6.9597]]],
+["2/23 (화)","겐트 / 브뤼헤 당일치기",[["겐트 성(그라벤스틴)",51.0572,3.7211],["성 바프 대성당",51.053,3.7276],["그라슬레이",51.0545,3.721],["브뤼헤 마르크트 광장",51.2085,3.2247],["로젠후드 부두",51.2096,3.2267]]],
+["2/24 (수)","브뤼셀 쇼핑 및 귀국",[["뤼 뇌브 쇼핑가",50.8528,4.3558],["City2 쇼핑몰",50.8545,4.356],["노이하우스 초콜릿",50.8472,4.354],["브뤼셀 공항",50.901,4.4844]]]
+];
+const T={a:["📍","관광지"],f:["🍴","식당"],c:["☕","카페"],e:["✨","기타"]};
+const E=encodeURIComponent,esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/"/g,"&quot;");
+const online=()=>GAS_URL.startsWith("http");
+const status=s=>document.getElementById("sync-status").innerText=s;
+let cur=0,curF="info",map=null,mode="transit",cand=[];
+let sharedData={memo:[],money:[],check:[],rest:[],stay:[],plan:null};
+const SHN={rest:"식당",stay:"숙소"};
+let plan={v:0,days:D.map((d,i)=>({places:d[2].map((p,j)=>({id:"d"+i+"p"+j,n:p[0],la:p[1],lo:p[2],t:"a",b:0}))}))};
+const okPlan=p=>p&&p.days&&p.days.length==D.length;
+const norm=r=>{["memo","money","check","rest","stay"].forEach(k=>r[k]=r[k]||[]);return r};
+
+async function getAll(){try{return norm(await (await fetch(GAS_URL)).json())}catch(e){return null}}
+async function loadData(){
+ if(!online())return;
+ const r=await getAll();
+ if(!r){status("⚠️ 연결 실패 (이 기기에서만 보여요)");return}
+ sharedData=r;if(okPlan(r.plan))plan=r.plan;
+ status("✅ 공동 편집 연동 중");
+}
+async function init(){renderAll();await loadData();renderAll()}
+
+function renderTabs(){document.getElementById("day-tabs").innerHTML=D.map((d,i)=>`<button class="${i==cur?"on":""}" onclick="setDay(${i})">${i+1}일차</button>`).join("")}
+function renderAll(){renderTabs();updateMap();renderContent()}
+function setDay(i){cur=i;cand=[];renderAll()}
+function setF(f){curF=f;document.querySelectorAll("#feature-tabs button").forEach(b=>b.classList.toggle("on",b.dataset.f==f));renderContent()}
+
+function updateMap(){
+ if(map)map.remove();
+ map=L.map("map",{scrollWheelZoom:false});
+ L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",{attribution:"Esri"}).addTo(map);
+ const a=plan.days[cur].places,g=a.filter(p=>p.la!=null),pts=g.map(p=>[p.la,p.lo]);
+ if(!pts.length){map.setView([48.5,5],4);return}
+ L.polyline(pts,{color:"#2f7de1",weight:3,dashArray:"5, 5"}).addTo(map);
+ a.forEach((p,i)=>{if(p.la==null)return;
+  L.marker([p.la,p.lo],{icon:L.divIcon({className:"",html:`<div class="pin ${p.t}">${i+1}</div>`,iconSize:[26,26]})}).addTo(map).bindPopup(`<b>${esc(p.n)}</b>`)});
+ map.fitBounds(L.latLngBounds(pts),{padding:[50,50],maxZoom:15});
+}
+
+/* ---------- 공동 일정 편집 ---------- */
+async function mutate(fn){
+ status("⏳ 저장 중...");
+ if(online()){const r=await getAll();if(r&&okPlan(r.plan))plan=r.plan}
+ fn();plan.v=(plan.v||0)+1;renderAll();
+ if(!online())return;
+ try{await fetch(GAS_URL,{method:"POST",body:JSON.stringify({type:"plan",rowData:[JSON.stringify(plan)]})})}catch(e){}
+ const r=await getAll();
+ if(r&&r.plan&&r.plan.v===plan.v)status("✅ 저장됨 · 일행 화면에도 반영돼요");
+ else status("⚠️ 일정이 시트에 저장되지 않았어요 (Apps Script를 새 버전으로 배포했는지 확인)");
+}
+function loc(id){for(let d=0;d<plan.days.length;d++){const i=plan.days[d].places.findIndex(p=>p.id==id);if(i>=0)return[d,i]}return[-1,-1]}
+const dt=i=>plan.days[i].title||D[i][1];
+function renameDay(i){
+ const t=prompt("일정 제목을 입력하세요 (비우면 기본 제목으로 돌아가요)",dt(i));
+ if(t===null)return;
+ const v=t.trim();
+ mutate(()=>{if(v)plan.days[i].title=v;else delete plan.days[i].title});
+}
+function mv(id,k){mutate(()=>{const[d,i]=loc(id);if(d<0)return;const a=plan.days[d].places,j=i+k;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]]})}
+function mvDay(id,nd){nd=+nd;mutate(()=>{const[d,i]=loc(id);if(d<0)return;const[p]=plan.days[d].places.splice(i,1);plan.days[nd].places.push(p)})}
+function del(id){if(!confirm("이 장소를 삭제할까요? (일행 화면에서도 사라져요)"))return;mutate(()=>{const[d,i]=loc(id);if(d>=0)plan.days[d].places.splice(i,1)})}
+
+function posOpts(){
+ const s=document.getElementById("aP");if(!s)return;
+ const a=plan.days[+document.getElementById("aD").value].places;
+ s.innerHTML=`<option value="${a.length}">맨 뒤에 추가</option><option value="0">맨 앞에 추가</option>`+a.map((p,i)=>`<option value="${i+1}">${i+1}. ${esc(p.n)} 뒤에</option>`).join("");
+}
+async function search(){
+ const name=document.getElementById("aN").value.trim();
+ if(!name){alert("장소명을 입력하세요");return}
+ const a=plan.days[+document.getElementById("aD").value].places.filter(p=>p.la!=null);
+ const la=a.length?a[0].la:48.8,lo=a.length?a[0].lo:2.3,box=document.getElementById("aR");
+ box.innerHTML='<div style="margin-top:8px;color:var(--mu)">검색 중...</div>';
+ try{
+  const r=await(await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&accept-language=ko&q=${E(name)}&viewbox=${lo-1},${la+1},${lo+1},${la-1}`)).json();
+  cand=r.map(x=>({la:+x.lat,lo:+x.lon,label:x.display_name}));
+ }catch(e){cand=[]}
+ box.innerHTML=(cand.length?'<div style="margin:8px 0 4px;font-size:.8rem;color:var(--mu)">맞는 위치를 눌러 추가하세요</div>':'<div style="margin-top:8px;color:var(--mu);font-size:.85rem">검색 결과가 없어요. 영문·현지 이름이나 도시명을 같이 써 보세요.</div>')
+  +cand.map((c,i)=>`<button class="b h" onclick="addP(${i})">${esc(c.label.slice(0,80))}</button>`).join("")
+  +'<button class="b h" onclick="addP(-1)">📝 위치 없이 이름만 추가 (지도엔 안 나와요)</button>';
+}
+function addP(i){
+ const d=+document.getElementById("aD").value,t=document.getElementById("aT").value,pos=+document.getElementById("aP").value,n=document.getElementById("aN").value.trim();
+ const o={id:"n"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),n,t,b:1,la:i>=0?cand[i].la:null,lo:i>=0?cand[i].lo:null};
+ cur=d;cand=[];
+ mutate(()=>{const a=plan.days[d].places;a.splice(Math.min(pos,a.length),0,o)});
+}
+function gRoute(){
+ const a=plan.days[cur].places;if(!a.length)return;
+ const q=p=>p.la!=null?p.la+","+p.lo:p.n;let u;
+ if(a.length==1)u="https://www.google.com/maps/search/?api=1&query="+E(q(a[0]));
+ else{u="https://www.google.com/maps/dir/?api=1&travelmode="+mode+"&origin="+E(q(a[0]))+"&destination="+E(q(a[a.length-1]));
+  const w=a.slice(1,-1).slice(0,9);if(w.length)u+="&waypoints="+w.map(p=>E(q(p))).join("%7C")}
+ window.open(u,"_blank");
+}
+
+/* ---------- 화면 ---------- */
+function renderContent(){
+ const v=document.getElementById("view"),d=D[cur];
+ if(curF==="info"){
+  const a=plan.days[cur].places;
+  const memoList=sharedData.memo.filter(r=>r[0]==cur+1),lastMemo=memoList.length?memoList[memoList.length-1][1]:"";
+  const rows=a.map((p,i)=>`<div class="pl"><span class="num ${p.t}">${i+1}</span>
+   <div class="nm">${T[p.t][0]} ${esc(p.n)}<span class="tag ${p.b?"":"g"}">${p.b?"추가":"기존 일정"}</span></div>
+   <div class="ctl"><button onclick="mv('${p.id}',-1)">↑</button><button onclick="mv('${p.id}',1)">↓</button>
+   <select onchange="if(this.value!=='')mvDay('${p.id}',this.value)"><option value="">📅 이동</option>${D.map((_,k)=>k==cur?"":`<option value="${k}">${k+1}일차로</option>`).join("")}</select>
+   <button onclick="del('${p.id}')">✕</button></div></div>`).join("");
+  v.innerHTML=`<div class="card"><h2 style="margin:0 0 6px">${d[0]} · ${esc(dt(cur))} <button class="lk" style="cursor:pointer;vertical-align:middle;font-weight:normal" onclick="renameDay(${cur})">✏️ 제목 수정</button></h2>${rows||'<div style="color:var(--mu)">장소가 없어요. 아래에서 추가하세요.</div>'}
+   <div class="row2"><select onchange="mode=this.value">${[["transit","대중교통"],["walking","도보"],["driving","자동차"]].map(m=>`<option value="${m[0]}" ${m[0]==mode?"selected":""}>${m[1]}</option>`).join("")}</select></div>
+   <button class="b" onclick="gRoute()">🧭 구글 지도 루트 열기 (현재 순서대로)</button></div>
+   <div class="card"><h3 style="margin:0">➕ 장소 추가</h3>
+   <div class="row2"><select id="aD" onchange="posOpts()">${D.map((x,i)=>`<option value="${i}" ${i==cur?"selected":""}>${i+1}일차 ${x[0]}</option>`).join("")}</select>
+   <select id="aT">${Object.entries(T).map(([k,x])=>`<option value="${k}">${x[0]} ${x[1]}</option>`).join("")}</select></div>
+   <div class="row2"><input id="aN" placeholder="장소명 (예: Delirium Cafe Brussels)" style="flex:1;min-width:160px"><select id="aP"></select></div>
+   <button class="b" onclick="search()">🔎 위치 검색</button><div id="aR"></div></div>
+   <div class="card"><h3 style="margin:0">📝 메모</h3><textarea id="memoInput" rows="5">${esc(lastMemo)}</textarea>
+   <button class="b" onclick="saveMemo()">시트에 저장</button></div>`;
+  posOpts();
+ }else if(curF==="rest"){
+  const rows=sharedData.rest.map((r,i)=>({r,i})).slice(1).filter(x=>x.r[1]).sort((a,b)=>a.r[0]-b.r[0]);
+  v.innerHTML=`${recCard("rest")}<div class="card"><h2 style="margin:0 0 6px">🍴 식당·카페 목록</h2>${rows.map(({r,i})=>`<div class="pl"><span class="num f">${esc(r[0])}</span><div class="nm"><b>${esc(r[1])}</b><div style="font-size:.8rem;color:var(--mu)">${D[r[0]-1]?D[r[0]-1][0]:""} ${esc(r[2])}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(r[1])}">🗺</a><button onclick="delRow('rest',${i})">✕</button></div></div>`).join("")||'<div style="color:var(--mu)">아직 없어요. 아래에서 추가하세요.</div>'}</div>
+   <div class="card"><h3 style="margin:0">➕ 식당·카페 추가</h3>
+   <div class="row2"><select id="rD">${D.map((x,i)=>`<option value="${i}" ${i==cur?"selected":""}>${i+1}일차 ${x[0]}</option>`).join("")}</select></div>
+   <div class="row2"><input id="rN" placeholder="식당/카페 이름" style="flex:1"></div>
+   <div class="row2"><input id="rM" placeholder="메모 (예약 시간, 메뉴 등)" style="flex:1"></div>
+   <button class="b" onclick="addRow('rest')">시트에 추가</button></div>`;
+ }else if(curF==="stay"){
+  const rows=sharedData.stay.map((r,i)=>({r,i})).slice(1).filter(x=>x.r[0]).sort((a,b)=>D.findIndex(x=>x[0]==a.r[1])-D.findIndex(x=>x[0]==b.r[1]));
+  v.innerHTML=`${recCard("stay")}<div class="card"><h2 style="margin:0 0 6px">🛏️ 숙소 목록</h2>${rows.map(({r,i})=>`<div class="pl"><div class="nm"><b>🛏️ ${esc(r[0])}</b><div style="font-size:.8rem;color:var(--mu)">${esc(r[1])} → ${esc(r[2])}</div><div style="font-size:.8rem">${esc(r[3])} ${esc(r[4])}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(r[3]||r[0])}">🗺</a><button onclick="delRow('stay',${i})">✕</button></div></div>`).join("")||'<div style="color:var(--mu)">아직 없어요. 아래에서 추가하세요.</div>'}</div>
+   <div class="card"><h3 style="margin:0">➕ 숙소 추가</h3>
+   <div class="row2"><input id="sN" placeholder="숙소 이름" style="flex:1"></div>
+   <div class="row2"><input id="sA" placeholder="주소 (지도 검색에 쓰여요)" style="flex:1"></div>
+   <div class="row2"><select id="sI">${D.map((x,i)=>`<option value="${i}" ${i==cur?"selected":""}>${i+1}일차 ${x[0]}</option>`).join("")}</select><span style="align-self:center">체크인</span></div>
+   <div class="row2"><select id="sO">${D.map((x,i)=>`<option value="${i}">${i+1}일차 ${x[0]}</option>`).join("")}</select><span style="align-self:center">체크아웃</span></div>
+   <div class="row2"><input id="sM" placeholder="메모 (예약번호, 가격 등)" style="flex:1"></div>
+   <button class="b" onclick="addRow('stay')">시트에 추가</button></div>`;
+ }else if(curF==="money"){
+  const ex=sharedData.money.slice(1),total=ex.reduce((s,r)=>s+Number(r[2]||0),0);
+  v.innerHTML=`<div class="card"><h2>💰 정산</h2>${ex.map(e=>`<div class="expense-row"><span>${esc(e[0])} (${esc(e[1])})</span><b>€ ${esc(e[2])}</b></div>`).join("")}
+   <div style="text-align:right;font-weight:bold;margin-top:15px">합계: € ${total.toFixed(2)}</div>
+   <button class="b" onclick="addMoney()">지출 추가</button></div>`;
+ }else{
+  const ch=sharedData.check.slice(1);
+  v.innerHTML=`<div class="card"><h2>✅ 체크리스트</h2>${ch.map(c=>`<div style="padding:8px 0"><input type="checkbox"> ${esc(c[0])}</div>`).join("")}
+   <button class="b" onclick="addCheck()">항목 추가</button></div>`;
+ }
+}
+
+async function saveToSheet(type,rowData){
+ if(!online()){alert("배포 URL을 넣어주세요!");return}
+ status("⏳ 저장 중...");
+ try{await fetch(GAS_URL,{method:"POST",body:JSON.stringify({type,rowData})});alert("저장 성공!");await loadData();renderContent()}
+ catch(e){alert("저장 실패: "+e)}
+}
+function saveMemo(){saveToSheet("메모",[cur+1,document.getElementById("memoInput").value])}
+function addMoney(){const i=prompt("항목"),p=prompt("결제자(김예림/전은경)"),a=prompt("금액");if(i&&p&&a)saveToSheet("정산",[i,p,a])}
+function addCheck(){const t=prompt("준비물");if(t)saveToSheet("체크리스트",[t])}
+
+const val=id=>document.getElementById(id).value.trim();
+async function post(b){status("⏳ 저장 중...");try{await fetch(GAS_URL,{method:"POST",body:JSON.stringify(b)});status("✅ 저장됨 · 일행 화면에도 반영돼요")}catch(e){status("⚠️ 저장 실패")}}
+async function addRow(k){
+ if(!online()){alert("배포 URL을 넣어주세요!");return}
+ let row;
+ if(k==="rest"){const n=val("rN");if(!n){alert("식당 이름을 입력하세요");return}row=[+val("rD")+1,n,val("rM")]}
+ else{const n=val("sN");if(!n){alert("숙소 이름을 입력하세요");return}row=[n,val("sA"),D[+val("sI")][0],D[+val("sO")][0],val("sM")]}
+ await post({type:SHN[k],rowData:row});await loadData();renderContent();
+}
+async function delRow(k,i){
+ const r=sharedData[k][i];if(!r||!confirm("삭제할까요? (일행 화면에서도 사라져요)"))return;
+ await post({type:"삭제",sheet:SHN[k],row:i+1,expect:r.map(String)});await loadData();renderContent();
+}
+
+const CITIES={P:["파리",1,"Paris"],C:["콜마르",4,"Colmar"],S:["스트라스부르",4,"Strasbourg"],H:["하이델베르크",5,"Heidelberg"],B:["브뤼셀",6,"Brussels"],K:["쾰른",7,"Cologne"],G:["겐트",8,"Ghent"],R:["브뤼헤",8,"Bruges"]};
+const STAYC={P:[1,4],S:[4,5],B:[5,9]};
+// [이름, 한줄 설명, 지도 검색어]  ※ 참고용 추천이에요. 영업·가격·예약은 출발 전에 꼭 확인하세요.
+const REC={
+P:{r:[["Le Comptoir du Relais","생제르맹 지역 클래식 비스트로 (2/17 카페 드 플로르 근처)","Le Comptoir du Relais Paris"],["Café des Ministères","7구 정통 프랑스식 (오르세·에펠탑 쪽)","Café des Ministères Paris"],["Bistrot Belhara","에펠탑 근처 비스트로 (간판이 작아요)","Bistrot Belhara Paris"]],
+ h:[["Okko Hotels Paris Gare de l'Est","동역 근처 · 2/19 새벽 콜마르행 출발에 편해요","Okko Hotels Paris Gare de l'Est"],["Ibis Styles Paris Gare de l'Est TGV","동역 맞은편 · 가성비","Ibis Styles Paris Gare de l'Est TGV"],["Hôtel Kabanel","동역·북역 사이 · 지하철 5분","Hôtel Kabanel Paris"]]},
+C:{r:[["Wistub Brenner","미쉐린 빕 구르망 알자스 윈스튜브 (쁘띠 베니스 한 블록 안쪽)","Wistub Brenner Colmar"],["Au Koïfhus","구시가지 알자스 요리","Au Koïfhus Colmar"],["Restaurant Maison des Têtes","머리의 집 건물 안 식당","Maison des Têtes Colmar restaurant"]]},
+S:{r:[["Maison Kammerzell","대성당 옆 역사적 건물 · 슈크루트로 유명","Maison Kammerzell Strasbourg"],["Chez Yvonne","알자스 전통 윈스튜브","Chez Yvonne Strasbourg"],["Au Pont Corbeau","알자스 전통 식당","Au Pont Corbeau Strasbourg"]],
+ h:[["Hôtel Hannong","TGV역 도보 5분 · 대성당·쁘띠 프랑스 가까워요","Hôtel Hannong Strasbourg"],["Hôtel Gutenberg","대성당 근처 중급 호텔","Hôtel Gutenberg Strasbourg"],["Hôtel & Spa Régent Petite France","쁘띠 프랑스 운하 앞 · 고급","Régent Petite France Strasbourg"]]},
+H:{r:[["Zum Roten Ochsen","하이델베르크 대표 전통 선술집","Zum Roten Ochsen Heidelberg"],["Zum Güldenen Schaf","구시가지 독일 가정식","Zum Güldenen Schaf Heidelberg"],["Schnitzelbank","슈니첼 등 독일 가정식","Schnitzelbank Heidelberg"]]},
+B:{r:[["Fin de Siècle","벨기에 전통 요리 · 그랑플라스 도보권","Fin de Siècle Brussels"],["Aux Armes de Bruxelles","벨기에 전통 요리 (홍합·스튜)","Aux Armes de Bruxelles"],["Chez Léon","홍합 요리로 유명 · 그랑플라스 근처","Chez Léon Brussels"]],
+ h:[["Warwick Brussels – Grand Place","중앙역·그랑플라스 도보권","Warwick Brussels Grand Place"],["Motel One Brussels","왕립 거리 · 가성비 좋은 디자인 호텔","Motel One Brussels"],["ibis Brussels off Grand'Place","그랑플라스 150m · 가성비","ibis Brussels off Grand'Place"]]},
+K:{r:[["Früh am Dom","쾰른 대성당 앞 브라우하우스 (쾰슈 맥주)","Früh am Dom Köln"],["Brauhaus Sion","쾰른 전통 브라우하우스","Brauhaus Sion Köln"],["Gaffel am Dom","대성당 근처 브라우하우스","Gaffel am Dom Köln"]]},
+G:{r:[["Het Waterhuis aan de Bierkant","강변 맥주·벨기에 요리","Het Waterhuis aan de Bierkant Gent"],["Brasserie Pakhuis","대형 브라세리","Brasserie Pakhuis Gent"],["Taverne Keizershof","플랑드르 전통 요리 (워터주이)","Taverne Keizershof Gent"]]},
+R:{r:[["Cambrinus","맥주와 플랑드르 요리","Cambrinus Brugge"],["Café Vlissinghe","브뤼헤에서 가장 오래된 카페로 알려진 곳","Café Vlissinghe Brugge"],["De Vlaamsche Pot","플랑드르 전통 스튜","De Vlaamsche Pot Brugge"]]}
+};
+const dayOpts=sel=>D.map((x,i)=>`<option value="${i}" ${i==sel?"selected":""}>${i+1}일차 ${x[0]}</option>`).join("");
+let rc={rest:"P",stay:"P"};
+function recCard(k){
+ const cs=Object.keys(k==="rest"?CITIES:STAYC),c=cs.includes(rc[k])?rc[k]:cs[0],list=REC[c][k==="rest"?"r":"h"],en=CITIES[c][2];
+ const sel=k==="rest"?`<div class="row2"><select id="recD">${dayOpts(CITIES[c][1])}</select><span style="align-self:center;font-size:.85rem">에 추가</span></div>`
+  :`<div class="row2"><select id="recI">${dayOpts(STAYC[c][0])}</select><span style="align-self:center;font-size:.85rem">체크인</span></div><div class="row2"><select id="recO">${dayOpts(STAYC[c][1])}</select><span style="align-self:center;font-size:.85rem">체크아웃</span></div>`;
+ return `<div class="card"><h3 style="margin:0">⭐ 도시별 ${k==="rest"?"식당":"숙소"} 추천</h3>
+  <div class="row2"><select onchange="rc.${k}=this.value;renderContent()">${cs.map(x=>`<option value="${x}" ${x==c?"selected":""}>${CITIES[x][0]}</option>`).join("")}</select></div>${sel}
+  ${list.map((e,i)=>`<div class="pl"><div class="nm"><b>${esc(e[0])}</b><div style="font-size:.8rem;color:var(--mu)">${esc(e[1])}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(e[2])}">🗺</a><button onclick="addRec('${k}','${c}',${i})">＋ 내 목록</button></div></div>`).join("")}
+  <div class="row2"><a class="lk" target="_blank" rel="noopener" href="https://www.tripadvisor.com/Search?q=${E(en+(k==="rest"?" restaurants":" hotels"))}">트립어드바이저에서 더 보기</a><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E((k==="rest"?"restaurants in ":"hotels in ")+en)}">구글 지도에서 더 보기</a></div>
+  <div style="font-size:.75rem;color:var(--mu);margin-top:8px">참고용 추천이에요. 영업·가격·예약 가능 여부는 출발 전에 꼭 확인하세요.</div></div>`;
+}
+async function addRec(k,c,i){
+ if(!online()){alert("배포 URL을 넣어주세요!");return}
+ const e=REC[c][k==="rest"?"r":"h"][i];
+ const row=k==="rest"?[+val("recD")+1,e[0],e[1]]:[e[0],e[2],D[+val("recI")][0],D[+val("recO")][0],e[1]];
+ await post({type:SHN[k],rowData:row});await loadData();renderContent();
+}
+
+/* 15초마다 일행의 변경 사항 가져오기 (입력 중에는 건너뜀) */
+setInterval(async()=>{
+ if(!online())return;
+ const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
+ const r=await getAll();if(!r)return;
+ const ch=JSON.stringify(r.plan)!==JSON.stringify(plan)||JSON.stringify([r.memo,r.money,r.check,r.rest,r.stay])!==JSON.stringify([sharedData.memo,sharedData.money,sharedData.check,sharedData.rest,sharedData.stay]);
+ sharedData=r;if(okPlan(r.plan))plan=r.plan;
+ if(ch)renderAll();
+},15000);
+
+init();
+</script>
+</body>
+</html>
