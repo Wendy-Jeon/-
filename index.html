@@ -142,16 +142,17 @@ async function mutate(fn){
  else status("⚠️ 일정이 시트에 저장되지 않았어요 (Apps Script를 새 버전으로 배포했는지 확인)");
 }
 /* ---------- 장소 간 이동수단·이동시간 (plan.legs 에 저장 → 시트 공유) ----------
-   legs["A>B"]={m:이동수단, t:분, a:1(자동계산값, 직접 수정하면 해제)} */
+   legs["A>B"]={m:이동수단, t:분, a:1(시간 자동계산), am:1(이동수단 자동선택=최단시간)} */
 const MODES=[["transit","🚇 대중교통","transit"],["walk","🚶 도보","walking"],["metro","🚇 지하철","transit"],["bus","🚌 버스","transit"],["train","🚆 기차","transit"],["car","🚗 택시/자동차","driving"],["bike","🚲 자전거","bicycling"],["boat","⛴ 배","transit"],["etc","➕ 기타","transit"]];
+/* 최단시간 자동 선택 때 비교할 이동수단 (자동차를 빼려면 "driving" 삭제) */
+const AUTO=["walking","transit","driving"],KEY={walking:"walk",transit:"transit",driving:"car"};
 const legKey=(a,b)=>a+">"+b;
 const getLeg=(a,b)=>(plan.legs&&plan.legs[legKey(a,b)])||{m:"",t:""};
 const modeOf=l=>(MODES.find(x=>x[0]==l.m)||MODES[0])[2];
 const fmtMin=n=>n>=60?Math.floor(n/60)+"시간"+(n%60?" "+n%60+"분":""):n+"분";
 const qp=p=>p.la!=null?p.la+","+p.lo:p.n;
-const autoTried=new Set();let filling=false;
+const autoTried=new Set();let filling=false,lastErr="";
 
-let lastErr="";
 async function fetchMin(A,B,mode){
  let t;
  try{t=await(await fetch(GAS_URL+"?action=route&from="+E(qp(A))+"&to="+E(qp(B))+"&mode="+mode)).text()}
@@ -161,10 +162,22 @@ async function fetchMin(A,B,mode){
  lastErr=r&&r.ok===false?"구글이 경로를 못 찾음(ok:false)":"doGet의 route 코드가 적용 안 됨(재배포 확인) → "+t.slice(0,40);
  return null;
 }
-function applyAuto(res){
+/* 도보·대중교통·자동차를 모두 계산해 가장 짧은 것을 고름 */
+async function fetchBest(A,B){
+ const rs=await Promise.all(AUTO.map(async md=>[md,await fetchMin(A,B,md)]));
+ let best=null;rs.forEach(([md,m])=>{if(m!=null&&(!best||m<best[1]))best=[md,m]});
+ return best?{k:KEY[best[0]],min:best[1],auto:1}:null;
+}
+/* 이동수단을 직접 골랐으면 그 수단으로, 자동이면 최단시간 수단으로 계산 */
+async function calc(A,B,l){
+ if(l.m&&!l.am){const m=await fetchMin(A,B,modeOf(l));return m==null?null:{k:l.m,min:m,auto:0}}
+ return fetchBest(A,B);
+}
+function applyAuto(res,force){
  plan.legs=plan.legs||{};
- res.forEach(([x,y,m,force])=>{const k=legKey(x,y),o=Object.assign({m:"transit",t:""},plan.legs[k]);
-  if(o.t&&!force)return;o.m=o.m||"transit";o.t=m;o.a=1;plan.legs[k]=o});
+ res.forEach(([x,y,r])=>{const k=legKey(x,y),o=Object.assign({m:"",t:""},plan.legs[k]);
+  if(o.t&&!force)return;
+  o.m=r.k;if(r.auto)o.am=1;else delete o.am;o.t=r.min;o.a=1;plan.legs[k]=o});
 }
 /* 현재 일차에서 시간이 비어 있는 구간을 자동 계산 */
 async function autoFill(){
@@ -173,31 +186,33 @@ async function autoFill(){
  for(let i=0;i<a.length-1;i++){const k=legKey(a[i].id,a[i+1].id);
   if(!getLeg(a[i].id,a[i+1].id).t&&!autoTried.has(k)){autoTried.add(k);todo.push([a[i],a[i+1]])}}
  if(!todo.length)return;
- filling=true;status("⏳ 이동시간 계산 중...");
- const out=await Promise.all(todo.map(async([A,B])=>{let m=null;try{m=await fetchMin(A,B,modeOf(getLeg(A.id,B.id)))}catch(e){}return m==null?null:[A.id,B.id,m]}));
+ filling=true;status("⏳ 최단 이동시간 계산 중...");
+ const out=await Promise.all(todo.map(async([A,B])=>{let r=null;try{r=await calc(A,B,getLeg(A.id,B.id))}catch(e){lastErr=String(e)}return r?[A.id,B.id,r]:null}));
  filling=false;
  const res=out.filter(Boolean);
  if(!res.length){status("⚠️ 자동 계산 실패: "+lastErr);return}
  mutate(()=>applyAuto(res));
 }
-/* 한 구간을 다시 계산 (직접 입력한 값도 덮어씀) */
+/* 한 구간을 다시 계산 (직접 입력한 시간도 덮어씀) */
 async function refreshLeg(a,b){
  if(!online()){alert("배포 URL을 넣어주세요!");return}
  const[d1,i1]=loc(a),[d2,i2]=loc(b);if(d1<0||d2<0)return;
  const A=plan.days[d1].places[i1],B=plan.days[d2].places[i2];
  status("⏳ 이동시간 계산 중...");
- let m=null;try{m=await fetchMin(A,B,modeOf(getLeg(a,b)))}catch(e){}
- if(m==null){status("⚠️ 자동 계산 실패: "+lastErr);return}
- mutate(()=>applyAuto([[a,b,m,true]]));
+ let r=null;try{r=await calc(A,B,getLeg(a,b))}catch(e){lastErr=String(e)}
+ if(!r){status("⚠️ 자동 계산 실패: "+lastErr);return}
+ mutate(()=>applyAuto([[a,b,r]],true));
 }
 async function setLeg(a,b,f,v){
  const prev=getLeg(a,b);
  await mutate(()=>{
   plan.legs=plan.legs||{};const k=legKey(a,b),o=Object.assign({m:"",t:""},plan.legs[k]);
-  if(f=="t"){const n=Math.max(0,Math.round(+v||0));o.t=n||"";delete o.a}else o.m=v;
+  if(f=="t"){const n=Math.max(0,Math.round(+v||0));o.t=n||"";delete o.a}
+  else if(v=="auto"){o.m="";delete o.am}
+  else{o.m=v;delete o.am}
   if(!o.m&&!o.t)delete plan.legs[k];else plan.legs[k]=o;
  });
- if(f=="m"&&(!prev.t||prev.a))refreshLeg(a,b);   // 수단을 바꾸면 자동값은 다시 계산
+ if(f=="m"&&(v=="auto"||!prev.t||prev.a))refreshLeg(a,b);   // 수단을 바꾸면 자동값은 다시 계산
 }
 function gLeg(a,b){
  const[d1,i1]=loc(a),[d2,i2]=loc(b);if(d1<0||d2<0)return;
@@ -205,10 +220,10 @@ function gLeg(a,b){
  window.open("https://www.google.com/maps/dir/?api=1&travelmode="+modeOf(getLeg(a,b))+"&origin="+E(qp(A))+"&destination="+E(qp(B)),"_blank");
 }
 function legRow(p,n){
- const l=getLeg(p.id,n.id);
+ const l=getLeg(p.id,n.id),auto=l.am||!l.m,cm=MODES.find(x=>x[0]==l.m);
  return `<div class="leg">↓ 이동
-  <select onchange="setLeg('${p.id}','${n.id}','m',this.value)"><option value="">이동수단</option>${MODES.map(m=>`<option value="${m[0]}" ${m[0]==l.m?"selected":""}>${m[1]}</option>`).join("")}</select>
-  <input type="number" min="0" inputmode="numeric" placeholder="소요" value="${l.t||""}" onchange="setLeg('${p.id}','${n.id}','t',this.value)">분${l.t?`<span class="tag ${l.a?"":"g"}">${l.a?"자동":"직접"}</span>`:""}
+  <select onchange="setLeg('${p.id}','${n.id}','m',this.value)"><option value="auto" ${auto?"selected":""}>⚡ 최단시간(자동)</option>${MODES.map(m=>`<option value="${m[0]}" ${!auto&&m[0]==l.m?"selected":""}>${m[1]}</option>`).join("")}</select>
+  <input type="number" min="0" inputmode="numeric" placeholder="소요" value="${l.t||""}" onchange="setLeg('${p.id}','${n.id}','t',this.value)">분${l.t?`<span class="tag ${l.a?"":"g"}">${l.a?"자동":"직접"}</span>`:""}${auto&&cm&&l.t?`<span class="tag">${cm[1]}</span>`:""}
   <button class="lk" style="cursor:pointer" title="구글 지도로 다시 계산" onclick="refreshLeg('${p.id}','${n.id}')">🔄</button>
   <button class="lk" style="cursor:pointer" title="구글 지도에서 보기" onclick="gLeg('${p.id}','${n.id}')">🗺</button></div>`;
 }
@@ -379,4 +394,12 @@ setInterval(async()=>{
  if(!online())return;
  const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
  const r=await getAll();if(!r)return;
- const ch=JSON.stringify(r.plan)!==JSON.stringify(plan)||JSON.stringify([r.
+ const ch=JSON.stringify(r.plan)!==JSON.stringify(plan)||JSON.stringify([r.memo,r.money,r.check,r.rest,r.stay])!==JSON.stringify([sharedData.memo,sharedData.money,sharedData.check,sharedData.rest,sharedData.stay]);
+ sharedData=r;if(okPlan(r.plan))plan=r.plan;
+ if(ch)renderAll();
+},15000);
+
+init();
+</script>
+</body>
+</html>
