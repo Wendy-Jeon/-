@@ -319,10 +319,8 @@ function renderContent(){
    <div class="row2"><input id="sM" placeholder="메모 (예약번호, 가격 등)" style="flex:1"></div>
    <button class="b" onclick="addRow('stay')">시트에 추가</button></div>`;
  }else if(curF==="money"){
-  const ex=sharedData.money.slice(1),total=ex.reduce((s,r)=>s+Number(r[2]||0),0);
-  v.innerHTML=`<div class="card"><h2>💰 정산</h2>${ex.map(e=>`<div class="expense-row"><span>${esc(e[0])} (${esc(e[1])})</span><b>€ ${esc(e[2])}</b></div>`).join("")}
-   <div style="text-align:right;font-weight:bold;margin-top:15px">합계: € ${total.toFixed(2)}</div>
-   <button class="b" onclick="addMoney()">지출 추가</button></div>`;
+  v.innerHTML=moneyHTML();
+  if(mf.cur==="EUR"&&!mf.rate)fetchRate();
  }else{
   const ch=sharedData.check.slice(1);
   v.innerHTML=`<div class="card"><h2>✅ 체크리스트</h2>${ch.map(c=>`<div style="padding:8px 0"><input type="checkbox"> ${esc(c[0])}</div>`).join("")}
@@ -337,7 +335,91 @@ async function saveToSheet(type,rowData){
  catch(e){alert("저장 실패: "+e)}
 }
 function saveMemo(){saveToSheet("메모",[cur+1,document.getElementById("memoInput").value])}
-function addMoney(){const i=prompt("항목"),p=prompt("결제자(김예림/전은경)"),a=prompt("금액");if(i&&p&&a)saveToSheet("정산",[i,p,a])}
+/* ===== 정산: 유로 입력 시 입력일 환율 자동 조회 (수동 수정 가능) =====
+   시트 열 순서: 항목 | 결제자 | 금액 | 통화 | 환율 | 원화 | 날짜  (기존 3열 행은 유로로 간주) */
+const todayStr=()=>new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Seoul"});
+const won=n=>Number(n).toLocaleString("ko-KR");
+const fmtD=d=>{if(!d)return"";d=String(d);if(/^\d{4}-\d{2}-\d{2}$/.test(d))return d;const t=new Date(d);return isNaN(t)?d:t.toLocaleDateString("sv-SE",{timeZone:"Asia/Seoul"})};
+let mf={item:"",payer:"김예림",date:todayStr(),cur:"EUR",amt:"",rate:"",krw:"",src:""},rateSeq=0;
+function moneyRow(e){
+ const c=e[3]||"EUR",a=Number(e[2]||0),k=(e[5]!==undefined&&e[5]!=="")?Number(e[5]):null,d=fmtD(e[6]);
+ const main=c==="KRW"?`₩ ${won(a)}`:`€ ${a.toFixed(2)}`;
+ const sub=c==="EUR"?(k!=null?`≈ ₩ ${won(k)} <span style="color:var(--mu)">(1€=${esc(e[4])}원)</span>`:`<span style="color:var(--mu)">환율 미적용</span>`):"";
+ return `<div class="expense-row"><span>${esc(e[0])} (${esc(e[1])})${d?`<div style="font-size:.75rem;color:var(--mu)">${esc(d)}</div>`:""}</span><div style="text-align:right"><b>${main}</b>${sub?`<div style="font-size:.78rem">${sub}</div>`:""}</div></div>`;
+}
+function moneyHTML(){
+ const ex=sharedData.money.slice(1).filter(e=>e[0]||e[2]);
+ let eur=0,krw=0,miss=0;
+ ex.forEach(e=>{const c=e[3]||"EUR",a=Number(e[2]||0),k=(e[5]!==undefined&&e[5]!=="")?Number(e[5]):null;
+  if(c==="EUR"){eur+=a;if(k==null)miss++;else krw+=k}else krw+=(k!=null?k:a)});
+ const isE=mf.cur==="EUR";
+ return `<div class="card"><h2>💰 정산</h2>${ex.map(moneyRow).join("")||'<div style="color:var(--mu)">아직 없어요.</div>'}
+  <div style="text-align:right;font-weight:bold;margin-top:15px">합계: ₩ ${won(krw)}${eur?` <span style="font-weight:normal;color:var(--mu);font-size:.85rem">(유로 지출 € ${eur.toFixed(2)})</span>`:""}</div>
+  ${miss?`<div style="text-align:right;font-size:.75rem;color:var(--mu)">환율 없는 유로 지출 ${miss}건은 원화 합계에서 빠져 있어요</div>`:""}</div>
+ <div class="card"><h3 style="margin:0">➕ 지출 추가</h3>
+  <div class="row2"><input id="mfI" placeholder="항목 (예: 저녁 식사)" value="${esc(mf.item)}" oninput="mf.item=this.value" style="flex:1;min-width:140px">
+   <select id="mfP" onchange="mf.payer=this.value"><option ${mf.payer==="김예림"?"selected":""}>김예림</option><option ${mf.payer==="전은경"?"selected":""}>전은경</option></select></div>
+  <div class="row2"><input id="mfD" type="date" value="${esc(mf.date)}" onchange="onMoney('date',this.value)">
+   <select id="mfC" onchange="onMoney('cur',this.value)"><option value="EUR" ${isE?"selected":""}>€ 유로</option><option value="KRW" ${!isE?"selected":""}>₩ 원화</option></select>
+   <input id="mfA" type="number" inputmode="decimal" step="0.01" min="0" placeholder="금액" value="${esc(mf.amt)}" oninput="onMoney('amt',this.value)" style="flex:1;min-width:90px"></div>
+  ${isE?`<div class="row2"><span style="align-self:center;font-size:.85rem">1€ =</span>
+   <input id="mfR" type="number" inputmode="decimal" step="0.01" min="0" placeholder="환율" value="${esc(mf.rate)}" oninput="onMoney('rate',this.value)" style="width:100px">
+   <span style="align-self:center;font-size:.85rem">원 → ₩</span>
+   <input id="mfK" type="number" inputmode="numeric" step="1" min="0" placeholder="원화 금액" value="${esc(mf.krw)}" oninput="onMoney('krw',this.value)" style="flex:1;min-width:100px">
+   <button class="lk" onclick="mf.rate='';fetchRate()">🔄 자동</button></div>
+  <div id="mfS" style="font-size:.75rem;color:var(--mu);margin-top:6px">${esc(mf.src)}</div>`:""}
+  <button class="b" onclick="addMoney()">지출 추가</button></div>`;
+}
+function mfSync(){
+ const r=document.getElementById("mfR"),k=document.getElementById("mfK"),s=document.getElementById("mfS");
+ if(r&&document.activeElement!==r)r.value=mf.rate;
+ if(k&&document.activeElement!==k)k.value=mf.krw;
+ if(s)s.textContent=mf.src;
+}
+function mfCalc(){const a=parseFloat(mf.amt),r=parseFloat(mf.rate);mf.krw=(a>0&&r>0)?String(Math.round(a*r)):""}
+function onMoney(f,v){
+ mf[f]=v;
+ if(f==="date"){mf.rate="";mf.krw="";if(mf.cur==="EUR")fetchRate()}
+ else if(f==="cur"){mf.rate="";mf.krw="";mf.src="";renderContent();if(v==="EUR")fetchRate()}
+ else if(f==="amt"){mfCalc();mfSync()}
+ else if(f==="rate"){mf.src="✍️ 환율을 직접 입력했어요";mfCalc();mfSync()}
+ else if(f==="krw"){const a=parseFloat(mf.amt),k=parseFloat(v);if(a>0&&k>0)mf.rate=(k/a).toFixed(2);mf.src="✍️ 원화 금액을 직접 입력했어요";mfSync()}
+}
+async function fetchRate(){
+ const seq=++rateSeq,d=mf.date||todayStr(),q=/^\d{4}-\d{2}-\d{2}$/.test(d)?d:todayStr(),fut=q>todayStr();
+ mf.src="⏳ "+d+" 환율 불러오는 중...";mfSync();
+ const ok=(r,label,dt)=>{mf.rate=Number(r).toFixed(2);mfCalc();mf.src=`${label} ${dt} 기준${fut?" · 미래 날짜라 최신값":""} · 수정 가능`;mfSync()};
+ /* 1순위: 하나은행 매매기준율 (구글 시트 스크립트가 네이버에서 읽어 옴) */
+ if(online()){
+  try{
+   const j=await(await fetch(`${GAS_URL}?fx=${q}`)).json();
+   if(seq!==rateSeq)return;
+   if(j&&j.rate>0){ok(j.rate,"✅ 하나은행 매매기준율(네이버)",j.date);return}
+  }catch(e){}
+ }
+ /* 2순위: 유럽중앙은행 고시 환율 */
+ for(const base of["https://api.frankfurter.dev/v1","https://api.frankfurter.app"]){
+  try{
+   const j=await(await fetch(`${base}/${fut?"latest":q}?base=EUR&symbols=KRW`)).json(),r=j&&j.rates&&j.rates.KRW;
+   if(seq!==rateSeq)return;
+   if(r>0){ok(r,"⚠️ 네이버 조회 실패 → 유럽중앙은행 환율",j.date);return}
+  }catch(e){}
+ }
+ if(seq===rateSeq){mf.src="⚠️ 환율 자동 조회 실패 — 환율이나 원화 금액을 직접 입력하세요";mfSync()}
+}
+function addMoney(){
+ const a=parseFloat(mf.amt);
+ if(!mf.item.trim()){alert("항목을 입력하세요");return}
+ if(!(a>0)){alert("금액을 입력하세요");return}
+ let row;
+ if(mf.cur==="EUR"){
+  const r=parseFloat(mf.rate),k=parseFloat(mf.krw);
+  if(!(r>0)||!(k>0)){alert("환율(또는 원화 금액)이 비어 있어요. 🔄 자동을 누르거나 직접 입력하세요.");return}
+  row=[mf.item.trim(),mf.payer,a,"EUR",r,Math.round(k),mf.date]
+ }else row=[mf.item.trim(),mf.payer,a,"KRW","",Math.round(a),mf.date];
+ mf={...mf,item:"",amt:"",rate:"",krw:"",src:""};
+ saveToSheet("정산",row);
+}
 function addCheck(){const t=prompt("준비물");if(t)saveToSheet("체크리스트",[t])}
 
 const val=id=>document.getElementById(id).value.trim();
