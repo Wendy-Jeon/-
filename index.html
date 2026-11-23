@@ -36,6 +36,10 @@ textarea{width:100%;border-radius:12px;padding:12px;margin-top:10px;resize:none}
 .nm{flex:1;min-width:130px}
 .tag{font-size:.7rem;border-radius:8px;padding:1px 6px;background:#d9f2e0;color:#0a7a33;margin-left:4px}.tag.g{background:#eee;color:#777}
 .ctl{display:flex;gap:4px}.ctl button{border:1px solid var(--bd);background:#fff;border-radius:8px;padding:4px 8px;cursor:pointer}.ctl select{padding:4px}
+.leg{display:flex;align-items:center;gap:6px;flex-wrap:wrap;background:var(--sea);border-radius:10px;padding:6px 10px;margin:0 0 6px 34px;font-size:.82rem;color:var(--mu)}
+.leg select,.leg input{padding:4px 6px;font-size:.82rem}.leg input{width:62px}
+.leg .lk{padding:3px 7px;font-size:.8rem}
+.sum{font-size:.85rem;color:var(--ac);font-weight:bold;margin:2px 0 8px}
 .row2{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}
 .lk{border:1px solid var(--bd);background:#fff;border-radius:8px;padding:4px 8px;text-decoration:none;font-size:.85rem}
 .sticky-header{position:relative;overflow:hidden;background:linear-gradient(135deg,#1d3b78 0%,#2f7de1 60%,#7ab8f5 100%);border-bottom:0}
@@ -137,6 +141,76 @@ async function mutate(fn){
  if(r&&r.plan&&r.plan.v===plan.v)status("✅ 저장됨 · 일행 화면에도 반영돼요");
  else status("⚠️ 일정이 시트에 저장되지 않았어요 (Apps Script를 새 버전으로 배포했는지 확인)");
 }
+/* ---------- 장소 간 이동수단·이동시간 (plan.legs 에 저장 → 시트 공유) ----------
+   legs["A>B"]={m:이동수단, t:분, a:1(자동계산값, 직접 수정하면 해제)} */
+const MODES=[["transit","🚇 대중교통","transit"],["walk","🚶 도보","walking"],["metro","🚇 지하철","transit"],["bus","🚌 버스","transit"],["train","🚆 기차","transit"],["car","🚗 택시/자동차","driving"],["bike","🚲 자전거","bicycling"],["boat","⛴ 배","transit"],["etc","➕ 기타","transit"]];
+const legKey=(a,b)=>a+">"+b;
+const getLeg=(a,b)=>(plan.legs&&plan.legs[legKey(a,b)])||{m:"",t:""};
+const modeOf=l=>(MODES.find(x=>x[0]==l.m)||MODES[0])[2];
+const fmtMin=n=>n>=60?Math.floor(n/60)+"시간"+(n%60?" "+n%60+"분":""):n+"분";
+const qp=p=>p.la!=null?p.la+","+p.lo:p.n;
+const autoTried=new Set();let filling=false;
+
+async function fetchMin(A,B,mode){
+ const r=await(await fetch(GAS_URL+"?action=route&from="+E(qp(A))+"&to="+E(qp(B))+"&mode="+mode)).json();
+ return r&&r.ok&&r.min!=null?r.min:null;
+}
+function applyAuto(res){
+ plan.legs=plan.legs||{};
+ res.forEach(([x,y,m,force])=>{const k=legKey(x,y),o=Object.assign({m:"transit",t:""},plan.legs[k]);
+  if(o.t&&!force)return;o.m=o.m||"transit";o.t=m;o.a=1;plan.legs[k]=o});
+}
+/* 현재 일차에서 시간이 비어 있는 구간을 자동 계산 */
+async function autoFill(){
+ if(!online()||filling||curF!=="info")return;
+ const a=plan.days[cur].places,todo=[];
+ for(let i=0;i<a.length-1;i++){const k=legKey(a[i].id,a[i+1].id);
+  if(!getLeg(a[i].id,a[i+1].id).t&&!autoTried.has(k)){autoTried.add(k);todo.push([a[i],a[i+1]])}}
+ if(!todo.length)return;
+ filling=true;status("⏳ 이동시간 계산 중...");
+ const out=await Promise.all(todo.map(async([A,B])=>{let m=null;try{m=await fetchMin(A,B,modeOf(getLeg(A.id,B.id)))}catch(e){}return m==null?null:[A.id,B.id,m]}));
+ filling=false;
+ const res=out.filter(Boolean);
+ if(!res.length){status("⚠️ 이동시간 자동 계산 실패 (Apps Script 확인) · 직접 입력할 수 있어요");return}
+ mutate(()=>applyAuto(res));
+}
+/* 한 구간을 다시 계산 (직접 입력한 값도 덮어씀) */
+async function refreshLeg(a,b){
+ if(!online()){alert("배포 URL을 넣어주세요!");return}
+ const[d1,i1]=loc(a),[d2,i2]=loc(b);if(d1<0||d2<0)return;
+ const A=plan.days[d1].places[i1],B=plan.days[d2].places[i2];
+ status("⏳ 이동시간 계산 중...");
+ let m=null;try{m=await fetchMin(A,B,modeOf(getLeg(a,b)))}catch(e){}
+ if(m==null){status("⚠️ 이 구간은 자동 계산이 안 돼요. 직접 입력해 주세요");return}
+ mutate(()=>applyAuto([[a,b,m,true]]));
+}
+async function setLeg(a,b,f,v){
+ const prev=getLeg(a,b);
+ await mutate(()=>{
+  plan.legs=plan.legs||{};const k=legKey(a,b),o=Object.assign({m:"",t:""},plan.legs[k]);
+  if(f=="t"){const n=Math.max(0,Math.round(+v||0));o.t=n||"";delete o.a}else o.m=v;
+  if(!o.m&&!o.t)delete plan.legs[k];else plan.legs[k]=o;
+ });
+ if(f=="m"&&(!prev.t||prev.a))refreshLeg(a,b);   // 수단을 바꾸면 자동값은 다시 계산
+}
+function gLeg(a,b){
+ const[d1,i1]=loc(a),[d2,i2]=loc(b);if(d1<0||d2<0)return;
+ const A=plan.days[d1].places[i1],B=plan.days[d2].places[i2];
+ window.open("https://www.google.com/maps/dir/?api=1&travelmode="+modeOf(getLeg(a,b))+"&origin="+E(qp(A))+"&destination="+E(qp(B)),"_blank");
+}
+function legRow(p,n){
+ const l=getLeg(p.id,n.id);
+ return `<div class="leg">↓ 이동
+  <select onchange="setLeg('${p.id}','${n.id}','m',this.value)"><option value="">이동수단</option>${MODES.map(m=>`<option value="${m[0]}" ${m[0]==l.m?"selected":""}>${m[1]}</option>`).join("")}</select>
+  <input type="number" min="0" inputmode="numeric" placeholder="소요" value="${l.t||""}" onchange="setLeg('${p.id}','${n.id}','t',this.value)">분${l.t?`<span class="tag ${l.a?"":"g"}">${l.a?"자동":"직접"}</span>`:""}
+  <button class="lk" style="cursor:pointer" title="구글 지도로 다시 계산" onclick="refreshLeg('${p.id}','${n.id}')">🔄</button>
+  <button class="lk" style="cursor:pointer" title="구글 지도에서 보기" onclick="gLeg('${p.id}','${n.id}')">🗺</button></div>`;
+}
+function legSum(a){
+ let t=0;for(let i=0;i<a.length-1;i++)t+=+getLeg(a[i].id,a[i+1].id).t||0;
+ return t?`<div class="sum">🕒 오늘 이동시간 합계: ${fmtMin(t)}</div>`:"";
+}
+
 function loc(id){for(let d=0;d<plan.days.length;d++){const i=plan.days[d].places.findIndex(p=>p.id==id);if(i>=0)return[d,i]}return[-1,-1]}
 const dt=i=>plan.days[i].title||D[i][1];
 function renameDay(i){
@@ -147,7 +221,7 @@ function renameDay(i){
 }
 function mv(id,k){mutate(()=>{const[d,i]=loc(id);if(d<0)return;const a=plan.days[d].places,j=i+k;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]]})}
 function mvDay(id,nd){nd=+nd;mutate(()=>{const[d,i]=loc(id);if(d<0)return;const[p]=plan.days[d].places.splice(i,1);plan.days[nd].places.push(p)})}
-function del(id){if(!confirm("이 장소를 삭제할까요? (일행 화면에서도 사라져요)"))return;mutate(()=>{const[d,i]=loc(id);if(d>=0)plan.days[d].places.splice(i,1)})}
+function del(id){if(!confirm("이 장소를 삭제할까요? (일행 화면에서도 사라져요)"))return;mutate(()=>{const[d,i]=loc(id);if(d>=0)plan.days[d].places.splice(i,1);Object.keys(plan.legs||{}).forEach(k=>{if(k.split(">").includes(id))delete plan.legs[k]})})}
 
 function posOpts(){
  const s=document.getElementById("aP");if(!s)return;
@@ -193,9 +267,9 @@ function renderContent(){
    <div class="nm">${T[p.t][0]} ${esc(p.n)}<span class="tag ${p.b?"":"g"}">${p.b?"추가":"기존 일정"}</span></div>
    <div class="ctl"><button onclick="mv('${p.id}',-1)">↑</button><button onclick="mv('${p.id}',1)">↓</button>
    <select onchange="if(this.value!=='')mvDay('${p.id}',this.value)"><option value="">📅 이동</option>${D.map((_,k)=>k==cur?"":`<option value="${k}">${k+1}일차로</option>`).join("")}</select>
-   <button onclick="del('${p.id}')">✕</button></div></div>`).join("");
-  v.innerHTML=`<div class="card"><h2 style="margin:0 0 6px">${d[0]} · ${esc(dt(cur))} <button class="lk" style="cursor:pointer;vertical-align:middle;font-weight:normal" onclick="renameDay(${cur})">✏️ 제목 수정</button></h2>${rows||'<div style="color:var(--mu)">장소가 없어요. 아래에서 추가하세요.</div>'}
-   <div class="row2"><select onchange="mode=this.value">${[["transit","대중교통"],["walking","도보"],["driving","자동차"]].map(m=>`<option value="${m[0]}" ${m[0]==mode?"selected":""}>${m[1]}</option>`).join("")}</select></div>
+   <button onclick="del('${p.id}')">✕</button></div></div>${i<a.length-1?legRow(p,a[i+1]):""}`).join("");
+  v.innerHTML=`<div class="card"><h2 style="margin:0 0 6px">${d[0]} · ${esc(dt(cur))} <button class="lk" style="cursor:pointer;vertical-align:middle;font-weight:normal" onclick="renameDay(${cur})">✏️ 제목 수정</button></h2>${legSum(a)}${rows||'<div style="color:var(--mu)">장소가 없어요. 아래에서 추가하세요.</div>'}
+   <div class="row2"><span style="align-self:center;font-size:.8rem;color:var(--mu)">전체 루트 열 때 기준:</span><select onchange="mode=this.value">${[["transit","대중교통"],["walking","도보"],["driving","자동차"]].map(m=>`<option value="${m[0]}" ${m[0]==mode?"selected":""}>${m[1]}</option>`).join("")}</select></div>
    <button class="b" onclick="gRoute()">🧭 구글 지도 루트 열기 (현재 순서대로)</button></div>
    <div class="card"><h3 style="margin:0">➕ 장소 추가</h3>
    <div class="row2"><select id="aD" onchange="posOpts()">${D.map((x,i)=>`<option value="${i}" ${i==cur?"selected":""}>${i+1}일차 ${x[0]}</option>`).join("")}</select>
@@ -204,7 +278,7 @@ function renderContent(){
    <button class="b" onclick="search()">🔎 위치 검색</button><div id="aR"></div></div>
    <div class="card"><h3 style="margin:0">📝 메모</h3><textarea id="memoInput" rows="5">${esc(lastMemo)}</textarea>
    <button class="b" onclick="saveMemo()">시트에 저장</button></div>`;
-  posOpts();
+  posOpts();setTimeout(autoFill,0);
  }else if(curF==="rest"){
   const rows=sharedData.rest.map((r,i)=>({r,i})).slice(1).filter(x=>x.r[1]).sort((a,b)=>a.r[0]-b.r[0]);
   v.innerHTML=`${recCard("rest")}<div class="card"><h2 style="margin:0 0 6px">🍴 식당·카페 목록</h2>${rows.map(({r,i})=>`<div class="pl"><span class="num f">${esc(r[0])}</span><div class="nm"><b>${esc(r[1])}</b><div style="font-size:.8rem;color:var(--mu)">${D[r[0]-1]?D[r[0]-1][0]:""} ${esc(r[2])}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(r[1])}">🗺</a><button onclick="delRow('rest',${i})">✕</button></div></div>`).join("")||'<div style="color:var(--mu)">아직 없어요. 아래에서 추가하세요.</div>'}</div>
