@@ -151,9 +151,15 @@ const fmtMin=n=>n>=60?Math.floor(n/60)+"시간"+(n%60?" "+n%60+"분":""):n+"분"
 const qp=p=>p.la!=null?p.la+","+p.lo:p.n;
 const autoTried=new Set();let filling=false;
 
+let lastErr="";
 async function fetchMin(A,B,mode){
- const r=await(await fetch(GAS_URL+"?action=route&from="+E(qp(A))+"&to="+E(qp(B))+"&mode="+mode)).json();
- return r&&r.ok&&r.min!=null?r.min:null;
+ let t;
+ try{t=await(await fetch(GAS_URL+"?action=route&from="+E(qp(A))+"&to="+E(qp(B))+"&mode="+mode)).text()}
+ catch(e){lastErr="Apps Script에 연결 못 함 ("+e+")";return null}
+ let r=null;try{r=JSON.parse(t)}catch(e){lastErr="JSON 아닌 응답: "+t.slice(0,50);return null}
+ if(r&&r.ok&&r.min!=null)return r.min;
+ lastErr=r&&r.ok===false?"구글이 경로를 못 찾음(ok:false)":"doGet의 route 코드가 적용 안 됨(재배포 확인) → "+t.slice(0,40);
+ return null;
 }
 function applyAuto(res){
  plan.legs=plan.legs||{};
@@ -171,7 +177,7 @@ async function autoFill(){
  const out=await Promise.all(todo.map(async([A,B])=>{let m=null;try{m=await fetchMin(A,B,modeOf(getLeg(A.id,B.id)))}catch(e){}return m==null?null:[A.id,B.id,m]}));
  filling=false;
  const res=out.filter(Boolean);
- if(!res.length){status("⚠️ 이동시간 자동 계산 실패 (Apps Script 확인) · 직접 입력할 수 있어요");return}
+ if(!res.length){status("⚠️ 자동 계산 실패: "+lastErr);return}
  mutate(()=>applyAuto(res));
 }
 /* 한 구간을 다시 계산 (직접 입력한 값도 덮어씀) */
@@ -181,7 +187,7 @@ async function refreshLeg(a,b){
  const A=plan.days[d1].places[i1],B=plan.days[d2].places[i2];
  status("⏳ 이동시간 계산 중...");
  let m=null;try{m=await fetchMin(A,B,modeOf(getLeg(a,b)))}catch(e){}
- if(m==null){status("⚠️ 이 구간은 자동 계산이 안 돼요. 직접 입력해 주세요");return}
+ if(m==null){status("⚠️ 자동 계산 실패: "+lastErr);return}
  mutate(()=>applyAuto([[a,b,m,true]]));
 }
 async function setLeg(a,b,f,v){
@@ -373,12 +379,4 @@ setInterval(async()=>{
  if(!online())return;
  const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
  const r=await getAll();if(!r)return;
- const ch=JSON.stringify(r.plan)!==JSON.stringify(plan)||JSON.stringify([r.memo,r.money,r.check,r.rest,r.stay])!==JSON.stringify([sharedData.memo,sharedData.money,sharedData.check,sharedData.rest,sharedData.stay]);
- sharedData=r;if(okPlan(r.plan))plan=r.plan;
- if(ch)renderAll();
-},15000);
-
-init();
-</script>
-</body>
-</html>
+ const ch=JSON.stringify(r.plan)!==JSON.stringify(plan)||JSON.stringify([r.
