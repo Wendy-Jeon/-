@@ -143,9 +143,9 @@ async function mutate(fn){
 }
 /* ---------- 장소 간 이동수단·이동시간 (plan.legs 에 저장 → 시트 공유) ----------
    legs["A>B"]={m:이동수단, t:분, a:1(시간 자동계산), am:1(이동수단 자동선택=최단시간)} */
-const MODES=[["transit","🚇 대중교통","transit"],["walk","🚶 도보","walking"],["metro","🚇 지하철","transit"],["bus","🚌 버스","transit"],["train","🚆 기차","transit"],["car","🚗 택시/자동차","driving"],["bike","🚲 자전거","bicycling"],["boat","⛴ 배","transit"],["etc","➕ 기타","transit"]];
-/* 최단시간 자동 선택 때 비교할 이동수단 (자동차를 빼려면 "driving" 삭제) */
-const AUTO=["walking","transit","driving"],KEY={walking:"walk",transit:"transit",driving:"car"};
+const MODES=[["transit","🚇 대중교통","transit"],["walk","🚶 도보","walking"],["metro","🚇 지하철","transit"],["bus","🚌 버스","transit"],["train","🚆 기차","transit"],["boat","⛴ 배","transit"],["etc","➕ 기타","transit"]];
+/* 최단시간 자동 선택 때 비교할 이동수단: 도보·대중교통만 */
+const AUTO=["walking","transit"],KEY={walking:"walk",transit:"transit"};
 const legKey=(a,b)=>a+">"+b;
 const getLeg=(a,b)=>(plan.legs&&plan.legs[legKey(a,b)])||{m:"",t:""};
 const modeOf=l=>(MODES.find(x=>x[0]==l.m)||MODES[0])[2];
@@ -162,7 +162,7 @@ async function fetchMin(A,B,mode){
  lastErr=r&&r.ok===false?"구글이 경로를 못 찾음(ok:false)":"doGet의 route 코드가 적용 안 됨(재배포 확인) → "+t.slice(0,40);
  return null;
 }
-/* 도보·대중교통·자동차를 모두 계산해 가장 짧은 것을 고름 */
+/* 도보·대중교통을 계산해 더 짧은 것을 고름 */
 async function fetchBest(A,B){
  const rs=await Promise.all(AUTO.map(async md=>[md,await fetchMin(A,B,md)]));
  let best=null;rs.forEach(([md,m])=>{if(m!=null&&(!best||m<best[1]))best=[md,m]});
@@ -290,7 +290,7 @@ function renderContent(){
    <select onchange="if(this.value!=='')mvDay('${p.id}',this.value)"><option value="">📅 이동</option>${D.map((_,k)=>k==cur?"":`<option value="${k}">${k+1}일차로</option>`).join("")}</select>
    <button onclick="del('${p.id}')">✕</button></div></div>${i<a.length-1?legRow(p,a[i+1]):""}`).join("");
   v.innerHTML=`<div class="card"><h2 style="margin:0 0 6px">${d[0]} · ${esc(dt(cur))} <button class="lk" style="cursor:pointer;vertical-align:middle;font-weight:normal" onclick="renameDay(${cur})">✏️ 제목 수정</button></h2>${legSum(a)}${rows||'<div style="color:var(--mu)">장소가 없어요. 아래에서 추가하세요.</div>'}
-   <div class="row2"><span style="align-self:center;font-size:.8rem;color:var(--mu)">전체 루트 열 때 기준:</span><select onchange="mode=this.value">${[["transit","대중교통"],["walking","도보"],["driving","자동차"]].map(m=>`<option value="${m[0]}" ${m[0]==mode?"selected":""}>${m[1]}</option>`).join("")}</select></div>
+   <div class="row2"><span style="align-self:center;font-size:.8rem;color:var(--mu)">전체 루트 열 때 기준:</span><select onchange="mode=this.value">${[["transit","대중교통"],["walking","도보"]].map(m=>`<option value="${m[0]}" ${m[0]==mode?"selected":""}>${m[1]}</option>`).join("")}</select></div>
    <button class="b" onclick="gRoute()">🧭 구글 지도 루트 열기 (현재 순서대로)</button></div>
    <div class="card"><h3 style="margin:0">➕ 장소 추가</h3>
    <div class="row2"><select id="aD" onchange="posOpts()">${D.map((x,i)=>`<option value="${i}" ${i==cur?"selected":""}>${i+1}일차 ${x[0]}</option>`).join("")}</select>
