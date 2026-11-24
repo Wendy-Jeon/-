@@ -423,15 +423,7 @@ function addMoney(){
 function addCheck(){const t=prompt("준비물");if(t)saveToSheet("체크리스트",[t])}
 
 const val=id=>document.getElementById(id).value.trim();
-async function post(b){
- status("⏳ 저장 중...");
- try{
-  const r=await fetch(GAS_URL,{method:"POST",body:JSON.stringify(b)});
-  let j=null;try{j=await r.json()}catch(e){}
-  if(j&&j.ok===false){console.log("서버 거부:",j);status("⚠️ 저장 실패: "+(j.error==="changed"?"시트 내용이 달라서 거부됨":j.error));return j}
-  status("✅ 저장됨 · 일행 화면에도 반영돼요");return j||{ok:true};
- }catch(e){status("⚠️ 저장 실패");return{ok:false,error:String(e)}}
-}
+async function post(b){status("⏳ 저장 중...");try{await fetch(GAS_URL,{method:"POST",body:JSON.stringify(b)});status("✅ 저장됨 · 일행 화면에도 반영돼요")}catch(e){status("⚠️ 저장 실패")}}
 async function addRow(k){
  if(!online()){alert("배포 URL을 넣어주세요!");return}
  let row;
@@ -441,7 +433,7 @@ async function addRow(k){
 }
 async function delRow(k,i){
  const r=sharedData[k][i];if(!r||!confirm("삭제할까요? (일행 화면에서도 사라져요)"))return;
- const res=await post({type:"삭제",sheet:SHN[k],row:i+1,expect:r.map(String)});await loadData();renderContent();if(res&&res.ok===false)alert("삭제되지 않았어요: "+(res.error==="changed"?"시트 내용과 달라요."+(res.cur?"\n시트: "+res.cur.join(" | ")+"\n화면: "+res.exp.join(" | "):"\n(Code.gs를 새 버전으로 배포하면 어느 값이 다른지 여기에 표시돼요)"):res.error));
+ await post({type:"삭제",sheet:SHN[k],row:i+1,expect:r.map(String)});await loadData();renderContent();
 }
 
 const CITIES={P:["파리",1,"Paris"],C:["콜마르",4,"Colmar"],S:["스트라스부르",4,"Strasbourg"],H:["하이델베르크",5,"Heidelberg"],B:["브뤼셀",6,"Brussels"],K:["쾰른",7,"Cologne"],G:["겐트",8,"Ghent"],R:["브뤼헤",8,"Bruges"]};
@@ -481,4 +473,15 @@ async function addRec(k,c,i){
 
 /* 15초마다 일행의 변경 사항 가져오기 (입력 중에는 건너뜀) */
 setInterval(async()=>{
- if(!online())
+ if(!online())return;
+ const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
+ const r=await getAll();if(!r)return;
+ const ch=JSON.stringify(r.plan)!==JSON.stringify(plan)||JSON.stringify([r.memo,r.money,r.check,r.rest,r.stay])!==JSON.stringify([sharedData.memo,sharedData.money,sharedData.check,sharedData.rest,sharedData.stay]);
+ sharedData=r;if(okPlan(r.plan))plan=r.plan;
+ if(ch)renderAll();
+},15000);
+
+init();
+</script>
+</body>
+</html>
