@@ -389,12 +389,12 @@ async function fetchRate(){
  const seq=++rateSeq,d=mf.date||todayStr(),q=/^\d{4}-\d{2}-\d{2}$/.test(d)?d:todayStr(),fut=q>todayStr();
  mf.src="⏳ "+d+" 환율 불러오는 중...";mfSync();
  const ok=(r,label,dt)=>{mf.rate=Number(r).toFixed(2);mfCalc();mf.src=`${label} ${dt} 기준${fut?" · 미래 날짜라 최신값":""} · 수정 가능`;mfSync()};
- /* 1순위: 하나은행 매매기준율 (구글 시트 스크립트가 네이버에서 읽어 옴) */
+ /* 1순위: 하나은행 매매기준율 (구글 시트 스크립트가 하나은행에서 읽어 옴) */
  if(online()){
   try{
    const j=await(await fetch(`${GAS_URL}?fx=${q}`)).json();
    if(seq!==rateSeq)return;
-   if(j&&j.rate>0){ok(j.rate,"✅ 하나은행 매매기준율(네이버)",j.date);return}
+   if(j&&j.rate>0){ok(j.rate,"✅ 하나은행 매매기준율(최종 고시)",j.date);return}
   }catch(e){}
  }
  /* 2순위: 유럽중앙은행 고시 환율 */
@@ -402,7 +402,7 @@ async function fetchRate(){
   try{
    const j=await(await fetch(`${base}/${fut?"latest":q}?base=EUR&symbols=KRW`)).json(),r=j&&j.rates&&j.rates.KRW;
    if(seq!==rateSeq)return;
-   if(r>0){ok(r,"⚠️ 네이버 조회 실패 → 유럽중앙은행 환율",j.date);return}
+   if(r>0){ok(r,"⚠️ 하나은행 조회 실패 → 유럽중앙은행 환율",j.date);return}
   }catch(e){}
  }
  if(seq===rateSeq){mf.src="⚠️ 환율 자동 조회 실패 — 환율이나 원화 금액을 직접 입력하세요";mfSync()}
@@ -484,4 +484,4 @@ setInterval(async()=>{
 init();
 </script>
 </body>
-</html>
+</ht
