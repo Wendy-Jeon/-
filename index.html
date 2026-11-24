@@ -76,6 +76,11 @@ textarea{width:100%;border-radius:12px;padding:12px;margin-top:10px;resize:none}
 </div>
 </div>
 
+<script>
+/* 오류가 나면 화면 맨 위(상태줄)에 내용을 보여줘요 */
+window.addEventListener("error",function(e){var s=document.getElementById("sync-status");if(s){s.style.color="#ffd166";s.textContent="⚠️ 오류: "+e.message+" (줄 "+e.lineno+")"}});
+window.addEventListener("unhandledrejection",function(e){var s=document.getElementById("sync-status");if(s){s.style.color="#ffd166";s.textContent="⚠️ 오류: "+(e.reason&&e.reason.message||e.reason)}});
+</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 const GAS_URL="https://script.google.com/macros/s/AKfycbyKjR9esF9OZDWL19tGMZKzD6IlPAho9H624_YLb7735r_7okYGExB0t_-sojZWn7it/exec";
@@ -477,5 +482,4 @@ function recCard(k){
   :`<div class="row2"><select id="recI">${dayOpts(STAYC[c][0])}</select><span style="align-self:center;font-size:.85rem">체크인</span></div><div class="row2"><select id="recO">${dayOpts(STAYC[c][1])}</select><span style="align-self:center;font-size:.85rem">체크아웃</span></div>`;
  return `<div class="card"><h3 style="margin:0">⭐ 도시별 ${k==="rest"?"식당":"숙소"} 추천</h3>
   <div class="row2"><select onchange="rc.${k}=this.value;renderContent()">${cs.map(x=>`<option value="${x}" ${x==c?"selected":""}>${CITIES[x][0]}</option>`).join("")}</select></div>${sel}
-  ${list.map((e,i)=>`<div class="pl"><div class="nm"><b>${esc(e[0])}</b><div style="font-size:.8rem;color:var(--mu)">${esc(e[1])}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(e[2])}">🗺</a><button onclick="addRec('${k}','${c}',${i})">＋ 내 목록</button></div></div>`).join("")}
-  <div class="row2"><a class="lk" target="_blank" rel="noopener" href="https://www.tripadvisor.com/Search?q=${E(en+(k==="rest"?" restaurants":" hotels"))}">트립어드바이저에서 더 보기</a><a class="
+  ${list.map((e,i)=>`<div class="pl"><div class="nm"><b>${esc(e[0])}</b><div style="font-size:.8rem;color:var(--mu
