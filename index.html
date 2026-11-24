@@ -98,7 +98,7 @@ const online=()=>GAS_URL.startsWith("http");
 const status=s=>document.getElementById("sync-status").innerText=s;
 let cur=0,curF="info",map=null,mode="transit",cand=[];
 let sharedData={memo:[],money:[],check:[],rest:[],stay:[],plan:null};
-const SHN={rest:"식당",stay:"숙소"};
+const SHN={rest:"식당",stay:"숙소",money:"정산"};
 let plan={v:0,days:D.map((d,i)=>({places:d[2].map((p,j)=>({id:"d"+i+"p"+j,n:p[0],la:p[1],lo:p[2],t:"a",b:0}))}))};
 const okPlan=p=>p&&p.days&&p.days.length==D.length;
 const norm=r=>{["memo","money","check","rest","stay"].forEach(k=>r[k]=r[k]||[]);return r};
@@ -339,18 +339,18 @@ function saveMemo(){saveToSheet("메모",[cur+1,document.getElementById("memoInp
    시트 열 순서: 항목 | 결제자 | 금액 | 통화 | 환율 | 원화 | 날짜  (기존 3열 행은 유로로 간주) */
 const todayStr=()=>new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Seoul"});
 const won=n=>Number(n).toLocaleString("ko-KR");
-const fmtD=d=>{if(!d)return"";d=String(d);if(/^\d{4}-\d{2}-\d{2}$/.test(d))return d;const t=new Date(d);return isNaN(t)?d:t.toLocaleDateString("sv-SE",{timeZone:"Asia/Seoul"})};
+const fmtD=d=>{if(!d)return"";d=String(d).replace(/^'/,"");if(/^\d{4}-\d{2}-\d{2}$/.test(d))return d;const t=new Date(d);return isNaN(t)?d:t.toLocaleDateString("sv-SE",{timeZone:"Asia/Seoul"})};
 let mf={item:"",payer:"김예림",date:todayStr(),cur:"EUR",amt:"",rate:"",krw:"",src:""},rateSeq=0;
-function moneyRow(e){
+function moneyRow({r:e,i}){
  const c=e[3]||"EUR",a=Number(e[2]||0),k=(e[5]!==undefined&&e[5]!=="")?Number(e[5]):null,d=fmtD(e[6]);
  const main=c==="KRW"?`₩ ${won(a)}`:`€ ${a.toFixed(2)}`;
  const sub=c==="EUR"?(k!=null?`≈ ₩ ${won(k)} <span style="color:var(--mu)">(1€=${esc(e[4])}원)</span>`:`<span style="color:var(--mu)">환율 미적용</span>`):"";
- return `<div class="expense-row"><span>${esc(e[0])} (${esc(e[1])})${d?`<div style="font-size:.75rem;color:var(--mu)">${esc(d)}</div>`:""}</span><div style="text-align:right"><b>${main}</b>${sub?`<div style="font-size:.78rem">${sub}</div>`:""}</div></div>`;
+ return `<div class="expense-row" style="align-items:center;gap:8px"><span style="flex:1">${esc(e[0])} (${esc(e[1])})${d?`<div style="font-size:.75rem;color:var(--mu)">${esc(d)}</div>`:""}</span><div style="text-align:right"><b>${main}</b>${sub?`<div style="font-size:.78rem">${sub}</div>`:""}</div><div class="ctl"><button onclick="delRow('money',${i})">✕</button></div></div>`;
 }
 function moneyHTML(){
- const ex=sharedData.money.slice(1).filter(e=>e[0]||e[2]);
+ const ex=sharedData.money.map((r,i)=>({r,i})).slice(1).filter(x=>x.r[0]||x.r[2]);
  let eur=0,krw=0,miss=0;
- ex.forEach(e=>{const c=e[3]||"EUR",a=Number(e[2]||0),k=(e[5]!==undefined&&e[5]!=="")?Number(e[5]):null;
+ ex.forEach(({r:e})=>{const c=e[3]||"EUR",a=Number(e[2]||0),k=(e[5]!==undefined&&e[5]!=="")?Number(e[5]):null;
   if(c==="EUR"){eur+=a;if(k==null)miss++;else krw+=k}else krw+=(k!=null?k:a)});
  const isE=mf.cur==="EUR";
  return `<div class="card"><h2>💰 정산</h2>${ex.map(moneyRow).join("")||'<div style="color:var(--mu)">아직 없어요.</div>'}
@@ -415,8 +415,8 @@ function addMoney(){
  if(mf.cur==="EUR"){
   const r=parseFloat(mf.rate),k=parseFloat(mf.krw);
   if(!(r>0)||!(k>0)){alert("환율(또는 원화 금액)이 비어 있어요. 🔄 자동을 누르거나 직접 입력하세요.");return}
-  row=[mf.item.trim(),mf.payer,a,"EUR",r,Math.round(k),mf.date]
- }else row=[mf.item.trim(),mf.payer,a,"KRW","",Math.round(a),mf.date];
+  row=[mf.item.trim(),mf.payer,a,"EUR",r,Math.round(k),"'"+mf.date]
+ }else row=[mf.item.trim(),mf.payer,a,"KRW","",Math.round(a),"'"+mf.date];
  mf={...mf,item:"",amt:"",rate:"",krw:"",src:""};
  saveToSheet("정산",row);
 }
@@ -484,4 +484,4 @@ setInterval(async()=>{
 init();
 </script>
 </body>
-</ht
+</html>
