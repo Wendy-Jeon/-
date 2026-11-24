@@ -98,7 +98,7 @@ const online=()=>GAS_URL.startsWith("http");
 const status=s=>document.getElementById("sync-status").innerText=s;
 let cur=0,curF="info",map=null,mode="transit",cand=[];
 let sharedData={memo:[],money:[],check:[],rest:[],stay:[],plan:null};
-const SHN={rest:"식당",stay:"숙소"};
+const SHN={rest:"식당",stay:"숙소",money:"정산"};
 let plan={v:0,days:D.map((d,i)=>({places:d[2].map((p,j)=>({id:"d"+i+"p"+j,n:p[0],la:p[1],lo:p[2],t:"a",b:0}))}))};
 const okPlan=p=>p&&p.days&&p.days.length==D.length;
 const norm=r=>{["memo","money","check","rest","stay"].forEach(k=>r[k]=r[k]||[]);return r};
@@ -139,12 +139,10 @@ async function mutate(fn){
  try{await fetch(GAS_URL,{method:"POST",body:JSON.stringify({type:"plan",rowData:[JSON.stringify(plan)]})})}catch(e){}
  const r=await getAll();
  if(r&&r.plan&&r.plan.v===plan.v)status("✅ 저장됨 · 일행 화면에도 반영돼요");
- else status("⚠️ 일정이 시트에 저장되지 않았어요 (Apps Script를 새 버전으로 배포했는지 확인)");
+ else status("⚠️ 일정이 시트에 저장되지 않았어요");
 }
-/* ---------- 장소 간 이동수단·이동시간 (plan.legs 에 저장 → 시트 공유) ----------
-   legs["A>B"]={m:이동수단, t:분, a:1(시간 자동계산), am:1(이동수단 자동선택=최단시간)} */
+
 const MODES=[["transit","🚇 대중교통","transit"],["walk","🚶 도보","walking"],["metro","🚇 지하철","transit"],["bus","🚌 버스","transit"],["train","🚆 기차","transit"],["boat","⛴ 배","transit"],["etc","➕ 기타","transit"]];
-/* 최단시간 자동 선택 때 비교할 이동수단: 도보·대중교통만 */
 const AUTO=["walking","transit"],KEY={walking:"walk",transit:"transit"};
 const legKey=(a,b)=>a+">"+b;
 const getLeg=(a,b)=>(plan.legs&&plan.legs[legKey(a,b)])||{m:"",t:""};
@@ -156,19 +154,16 @@ const autoTried=new Set();let filling=false,lastErr="";
 async function fetchMin(A,B,mode){
  let t;
  try{t=await(await fetch(GAS_URL+"?action=route&from="+E(qp(A))+"&to="+E(qp(B))+"&mode="+mode)).text()}
- catch(e){lastErr="Apps Script에 연결 못 함 ("+e+")";return null}
- let r=null;try{r=JSON.parse(t)}catch(e){lastErr="JSON 아닌 응답: "+t.slice(0,50);return null}
+ catch(e){return null}
+ let r=null;try{r=JSON.parse(t)}catch(e){return null}
  if(r&&r.ok&&r.min!=null)return r.min;
- lastErr=r&&r.ok===false?"구글이 경로를 못 찾음(ok:false)":"doGet의 route 코드가 적용 안 됨(재배포 확인) → "+t.slice(0,40);
  return null;
 }
-/* 도보·대중교통을 계산해 더 짧은 것을 고름 */
 async function fetchBest(A,B){
  const rs=await Promise.all(AUTO.map(async md=>[md,await fetchMin(A,B,md)]));
  let best=null;rs.forEach(([md,m])=>{if(m!=null&&(!best||m<best[1]))best=[md,m]});
  return best?{k:KEY[best[0]],min:best[1],auto:1}:null;
 }
-/* 이동수단을 직접 골랐으면 그 수단으로, 자동이면 최단시간 수단으로 계산 */
 async function calc(A,B,l){
  if(l.m&&!l.am){const m=await fetchMin(A,B,modeOf(l));return m==null?null:{k:l.m,min:m,auto:0}}
  return fetchBest(A,B);
@@ -179,7 +174,6 @@ function applyAuto(res,force){
   if(o.t&&!force)return;
   o.m=r.k;if(r.auto)o.am=1;else delete o.am;o.t=r.min;o.a=1;plan.legs[k]=o});
 }
-/* 현재 일차에서 시간이 비어 있는 구간을 자동 계산 */
 async function autoFill(){
  if(!online()||filling||curF!=="info")return;
  const a=plan.days[cur].places,todo=[];
@@ -190,17 +184,16 @@ async function autoFill(){
  const out=await Promise.all(todo.map(async([A,B])=>{let r=null;try{r=await calc(A,B,getLeg(A.id,B.id))}catch(e){lastErr=String(e)}return r?[A.id,B.id,r]:null}));
  filling=false;
  const res=out.filter(Boolean);
- if(!res.length){status("⚠️ 자동 계산 실패: "+lastErr);return}
+ if(!res.length){status("⚠️ 자동 계산 실패");return}
  mutate(()=>applyAuto(res));
 }
-/* 한 구간을 다시 계산 (직접 입력한 시간도 덮어씀) */
 async function refreshLeg(a,b){
  if(!online()){alert("배포 URL을 넣어주세요!");return}
  const[d1,i1]=loc(a),[d2,i2]=loc(b);if(d1<0||d2<0)return;
  const A=plan.days[d1].places[i1],B=plan.days[d2].places[i2];
  status("⏳ 이동시간 계산 중...");
  let r=null;try{r=await calc(A,B,getLeg(a,b))}catch(e){lastErr=String(e)}
- if(!r){status("⚠️ 자동 계산 실패: "+lastErr);return}
+ if(!r){status("⚠️ 자동 계산 실패");return}
  mutate(()=>applyAuto([[a,b,r]],true));
 }
 async function setLeg(a,b,f,v){
@@ -212,7 +205,7 @@ async function setLeg(a,b,f,v){
   else{o.m=v;delete o.am}
   if(!o.m&&!o.t)delete plan.legs[k];else plan.legs[k]=o;
  });
- if(f=="m"&&(v=="auto"||!prev.t||prev.a))refreshLeg(a,b);   // 수단을 바꾸면 자동값은 다시 계산
+ if(f=="m"&&(v=="auto"||!prev.t||prev.a))refreshLeg(a,b);
 }
 function gLeg(a,b){
  const[d1,i1]=loc(a),[d2,i2]=loc(b);if(d1<0||d2<0)return;
@@ -242,7 +235,7 @@ function renameDay(i){
 }
 function mv(id,k){mutate(()=>{const[d,i]=loc(id);if(d<0)return;const a=plan.days[d].places,j=i+k;if(j<0||j>=a.length)return;[a[i],a[j]]=[a[j],a[i]]})}
 function mvDay(id,nd){nd=+nd;mutate(()=>{const[d,i]=loc(id);if(d<0)return;const[p]=plan.days[d].places.splice(i,1);plan.days[nd].places.push(p)})}
-function del(id){if(!confirm("이 장소를 삭제할까요? (일행 화면에서도 사라져요)"))return;mutate(()=>{const[d,i]=loc(id);if(d>=0)plan.days[d].places.splice(i,1);Object.keys(plan.legs||{}).forEach(k=>{if(k.split(">").includes(id))delete plan.legs[k]})})}
+function del(id){if(!confirm("이 장소를 삭제할까요?"))return;mutate(()=>{const[d,i]=loc(id);if(d>=0)plan.days[d].places.splice(i,1);Object.keys(plan.legs||{}).forEach(k=>{if(k.split(">").includes(id))delete plan.legs[k]})})}
 
 function posOpts(){
  const s=document.getElementById("aP");if(!s)return;
@@ -259,14 +252,13 @@ async function search(){
   const r=await(await fetch(`https://nominatim.openstreetmap.org/search?format=jsonv2&limit=5&accept-language=ko&q=${E(name)}&viewbox=${lo-1},${la+1},${lo+1},${la-1}`)).json();
   cand=r.map(x=>({la:+x.lat,lo:+x.lon,label:x.display_name}));
  }catch(e){cand=[]}
- box.innerHTML=(cand.length?'<div style="margin:8px 0 4px;font-size:.8rem;color:var(--mu)">맞는 위치를 눌러 추가하세요</div>':'<div style="margin-top:8px;color:var(--mu);font-size:.85rem">검색 결과가 없어요. 영문·현지 이름이나 도시명을 같이 써 보세요.</div>')
+ box.innerHTML=(cand.length?'<div style="margin:8px 0 4px;font-size:.8rem;color:var(--mu)">맞는 위치를 눌러 추가하세요</div>':'<div style="margin-top:8px;color:var(--mu);font-size:.85rem">검색 결과가 없어요.</div>')
   +cand.map((c,i)=>`<button class="b h" onclick="addP(${i})">${esc(c.label.slice(0,80))}</button>`).join("")
-  +'<button class="b h" onclick="addP(-1)">📝 위치 없이 이름만 추가 (지도엔 안 나와요)</button>';
+  +'<button class="b h" onclick="addP(-1)">📝 위치 없이 이름만 추가</button>';
 }
 function addP(i){
  const d=+document.getElementById("aD").value,t=document.getElementById("aT").value,pos=+document.getElementById("aP").value,n=document.getElementById("aN").value.trim();
  const o={id:"n"+Date.now().toString(36)+Math.random().toString(36).slice(2,5),n,t,b:1,la:i>=0?cand[i].la:null,lo:i>=0?cand[i].lo:null};
- cur=d;cand=[];
  mutate(()=>{const a=plan.days[d].places;a.splice(Math.min(pos,a.length),0,o)});
 }
 function gRoute(){
@@ -290,33 +282,33 @@ function renderContent(){
    <select onchange="if(this.value!=='')mvDay('${p.id}',this.value)"><option value="">📅 이동</option>${D.map((_,k)=>k==cur?"":`<option value="${k}">${k+1}일차로</option>`).join("")}</select>
    <button onclick="del('${p.id}')">✕</button></div></div>${i<a.length-1?legRow(p,a[i+1]):""}`).join("");
   v.innerHTML=`<div class="card"><h2 style="margin:0 0 6px">${d[0]} · ${esc(dt(cur))} <button class="lk" style="cursor:pointer;vertical-align:middle;font-weight:normal" onclick="renameDay(${cur})">✏️ 제목 수정</button></h2>${legSum(a)}${rows||'<div style="color:var(--mu)">장소가 없어요. 아래에서 추가하세요.</div>'}
-   <div class="row2"><span style="align-self:center;font-size:.8rem;color:var(--mu)">전체 루트 열 때 기준:</span><select onchange="mode=this.value">${[["transit","대중교통"],["walking","도보"]].map(m=>`<option value="${m[0]}" ${m[0]==mode?"selected":""}>${m[1]}</option>`).join("")}</select></div>
-   <button class="b" onclick="gRoute()">🧭 구글 지도 루트 열기 (현재 순서대로)</button></div>
+   <div class="row2"><span style="align-self:center;font-size:.8rem;color:var(--mu)">기준:</span><select onchange="mode=this.value">${[["transit","대중교통"],["walking","도보"]].map(m=>`<option value="${m[0]}" ${m[0]==mode?"selected":""}>${m[1]}</option>`).join("")}</select></div>
+   <button class="b" onclick="gRoute()">🧭 구글 지도 루트 열기</button></div>
    <div class="card"><h3 style="margin:0">➕ 장소 추가</h3>
    <div class="row2"><select id="aD" onchange="posOpts()">${D.map((x,i)=>`<option value="${i}" ${i==cur?"selected":""}>${i+1}일차 ${x[0]}</option>`).join("")}</select>
    <select id="aT">${Object.entries(T).map(([k,x])=>`<option value="${k}">${x[0]} ${x[1]}</option>`).join("")}</select></div>
-   <div class="row2"><input id="aN" placeholder="장소명 (예: Delirium Cafe Brussels)" style="flex:1;min-width:160px"><select id="aP"></select></div>
+   <div class="row2"><input id="aN" placeholder="장소명" style="flex:1;min-width:160px"><select id="aP"></select></div>
    <button class="b" onclick="search()">🔎 위치 검색</button><div id="aR"></div></div>
    <div class="card"><h3 style="margin:0">📝 메모</h3><textarea id="memoInput" rows="5">${esc(lastMemo)}</textarea>
    <button class="b" onclick="saveMemo()">시트에 저장</button></div>`;
   posOpts();setTimeout(autoFill,0);
  }else if(curF==="rest"){
   const rows=sharedData.rest.map((r,i)=>({r,i})).slice(1).filter(x=>x.r[1]).sort((a,b)=>a.r[0]-b.r[0]);
-  v.innerHTML=`${recCard("rest")}<div class="card"><h2 style="margin:0 0 6px">🍴 식당·카페 목록</h2>${rows.map(({r,i})=>`<div class="pl"><span class="num f">${esc(r[0])}</span><div class="nm"><b>${esc(r[1])}</b><div style="font-size:.8rem;color:var(--mu)">${D[r[0]-1]?D[r[0]-1][0]:""} ${esc(r[2])}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(r[1])}">🗺</a><button onclick="delRow('rest',${i})">✕</button></div></div>`).join("")||'<div style="color:var(--mu)">아직 없어요. 아래에서 추가하세요.</div>'}</div>
+  v.innerHTML=`${recCard("rest")}<div class="card"><h2 style="margin:0 0 6px">🍴 식당·카페 목록</h2>${rows.map(({r,i})=>`<div class="pl"><span class="num f">${esc(r[0])}</span><div class="nm"><b>${esc(r[1])}</b><div style="font-size:.8rem;color:var(--mu)">${D[r[0]-1]?D[r[0]-1][0]:""} ${esc(r[2])}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(r[1])}">🗺</a><button onclick="delRow('rest',${i})">✕</button></div></div>`).join("")||'<div style="color:var(--mu)">아직 없어요.</div>'}</div>
    <div class="card"><h3 style="margin:0">➕ 식당·카페 추가</h3>
    <div class="row2"><select id="rD">${D.map((x,i)=>`<option value="${i}" ${i==cur?"selected":""}>${i+1}일차 ${x[0]}</option>`).join("")}</select></div>
    <div class="row2"><input id="rN" placeholder="식당/카페 이름" style="flex:1"></div>
-   <div class="row2"><input id="rM" placeholder="메모 (예약 시간, 메뉴 등)" style="flex:1"></div>
+   <div class="row2"><input id="rM" placeholder="메모" style="flex:1"></div>
    <button class="b" onclick="addRow('rest')">시트에 추가</button></div>`;
  }else if(curF==="stay"){
-  const rows=sharedData.stay.map((r,i)=>({r,i})).slice(1).filter(x=>x.r[0]).sort((a,b)=>D.findIndex(x=>x[0]==a.r[1])-D.findIndex(x=>x[0]==b.r[1]));
-  v.innerHTML=`${recCard("stay")}<div class="card"><h2 style="margin:0 0 6px">🛏️ 숙소 목록</h2>${rows.map(({r,i})=>`<div class="pl"><div class="nm"><b>🛏️ ${esc(r[0])}</b><div style="font-size:.8rem;color:var(--mu)">${esc(r[1])} → ${esc(r[2])}</div><div style="font-size:.8rem">${esc(r[3])} ${esc(r[4])}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(r[3]||r[0])}">🗺</a><button onclick="delRow('stay',${i})">✕</button></div></div>`).join("")||'<div style="color:var(--mu)">아직 없어요. 아래에서 추가하세요.</div>'}</div>
+  const rows=sharedData.stay.map((r,i)=>({r,i})).slice(1).filter(x=>x.r[0]).sort((a,b)=>D.findIndex(x=>x[0]==a.r[2])-D.findIndex(x=>x[0]==b.r[2]));
+  v.innerHTML=`${recCard("stay")}<div class="card"><h2 style="margin:0 0 6px">🛏️ 숙소 목록</h2>${rows.map(({r,i})=>`<div class="pl"><div class="nm"><b>🛏️ ${esc(r[0])}</b><div style="font-size:.8rem;color:var(--mu)">${esc(r[2])} → ${esc(r[3])}</div><div style="font-size:.85rem;color:var(--ac)">${esc(r[1])}</div><div style="font-size:.78rem;color:var(--mu)">${esc(r[4])}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(r[1]||r[0])}">🗺</a><button onclick="delRow('stay',${i})">✕</button></div></div>`).join("")||'<div style="color:var(--mu)">아직 없어요.</div>'}</div>
    <div class="card"><h3 style="margin:0">➕ 숙소 추가</h3>
    <div class="row2"><input id="sN" placeholder="숙소 이름" style="flex:1"></div>
    <div class="row2"><input id="sA" placeholder="주소 (지도 검색에 쓰여요)" style="flex:1"></div>
    <div class="row2"><select id="sI">${D.map((x,i)=>`<option value="${i}" ${i==cur?"selected":""}>${i+1}일차 ${x[0]}</option>`).join("")}</select><span style="align-self:center">체크인</span></div>
    <div class="row2"><select id="sO">${D.map((x,i)=>`<option value="${i}">${i+1}일차 ${x[0]}</option>`).join("")}</select><span style="align-self:center">체크아웃</span></div>
-   <div class="row2"><input id="sM" placeholder="메모 (예약번호, 가격 등)" style="flex:1"></div>
+   <div class="row2"><input id="sM" placeholder="메모" style="flex:1"></div>
    <button class="b" onclick="addRow('stay')">시트에 추가</button></div>`;
  }else if(curF==="money"){
   v.innerHTML=moneyHTML();
@@ -332,32 +324,33 @@ async function saveToSheet(type,rowData){
  if(!online()){alert("배포 URL을 넣어주세요!");return}
  status("⏳ 저장 중...");
  try{await fetch(GAS_URL,{method:"POST",body:JSON.stringify({type,rowData})});alert("저장 성공!");await loadData();renderContent()}
- catch(e){alert("저장 실패: "+e)}
+ catch(e){alert("저장 실패")}
 }
 function saveMemo(){saveToSheet("메모",[cur+1,document.getElementById("memoInput").value])}
-/* ===== 정산: 유로 입력 시 입력일 환율 자동 조회 (수동 수정 가능) =====
-   시트 열 순서: 항목 | 결제자 | 금액 | 통화 | 환율 | 원화 | 날짜  (기존 3열 행은 유로로 간주) */
+
 const todayStr=()=>new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Seoul"});
 const won=n=>Number(n).toLocaleString("ko-KR");
 const fmtD=d=>{if(!d)return"";d=String(d);if(/^\d{4}-\d{2}-\d{2}$/.test(d))return d;const t=new Date(d);return isNaN(t)?d:t.toLocaleDateString("sv-SE",{timeZone:"Asia/Seoul"})};
 let mf={item:"",payer:"김예림",date:todayStr(),cur:"EUR",amt:"",rate:"",krw:"",src:""},rateSeq=0;
-function moneyRow(e){
+
+function moneyRow(e, i){
  const c=e[3]||"EUR",a=Number(e[2]||0),k=(e[5]!==undefined&&e[5]!=="")?Number(e[5]):null,d=fmtD(e[6]);
  const main=c==="KRW"?`₩ ${won(a)}`:`€ ${a.toFixed(2)}`;
  const sub=c==="EUR"?(k!=null?`≈ ₩ ${won(k)} <span style="color:var(--mu)">(1€=${esc(e[4])}원)</span>`:`<span style="color:var(--mu)">환율 미적용</span>`):"";
- return `<div class="expense-row"><span>${esc(e[0])} (${esc(e[1])})${d?`<div style="font-size:.75rem;color:var(--mu)">${esc(d)}</div>`:""}</span><div style="text-align:right"><b>${main}</b>${sub?`<div style="font-size:.78rem">${sub}</div>`:""}</div></div>`;
+ return `<div class="expense-row"><span>${esc(e[0])} (${esc(e[1])})${d?`<div style="font-size:.75rem;color:var(--mu)">${esc(d)}</div>`:""}</span><div style="display:flex;align-items:center;gap:10px"><div style="text-align:right"><b>${main}</b>${sub?`<div style="font-size:.78rem">${sub}</div>`:""}</div><div class="ctl"><button onclick="delRow('money',${i})">✕</button></div></div></div>`;
 }
+
 function moneyHTML(){
- const ex=sharedData.money.slice(1).filter(e=>e[0]||e[2]);
+ const ex=sharedData.money.map((r,i)=>({r,i})).slice(1).filter(x=>x.r[0]||x.r[2]);
  let eur=0,krw=0,miss=0;
- ex.forEach(e=>{const c=e[3]||"EUR",a=Number(e[2]||0),k=(e[5]!==undefined&&e[5]!=="")?Number(e[5]):null;
+ ex.forEach(({r})=>{const c=r[3]||"EUR",a=Number(r[2]||0),k=(r[5]!==undefined&&r[5]!=="")?Number(r[5]):null;
   if(c==="EUR"){eur+=a;if(k==null)miss++;else krw+=k}else krw+=(k!=null?k:a)});
  const isE=mf.cur==="EUR";
- return `<div class="card"><h2>💰 정산</h2>${ex.map(moneyRow).join("")||'<div style="color:var(--mu)">아직 없어요.</div>'}
-  <div style="text-align:right;font-weight:bold;margin-top:15px">합계: ₩ ${won(krw)}${eur?` <span style="font-weight:normal;color:var(--mu);font-size:.85rem">(유로 지출 € ${eur.toFixed(2)})</span>`:""}</div>
-  ${miss?`<div style="text-align:right;font-size:.75rem;color:var(--mu)">환율 없는 유로 지출 ${miss}건은 원화 합계에서 빠져 있어요</div>`:""}</div>
+ return `<div class="card"><h2>💰 정산</h2>${ex.map(({r,i})=>moneyRow(r,i)).join("")||'<div style="color:var(--mu)">아직 없어요.</div>'}
+  <div style="text-align:right;font-weight:bold;margin-top:15px">합계: ₩ ${won(krw)}${eur?` <span style="font-weight:normal;color:var(--mu);font-size:.85rem">(€ ${eur.toFixed(2)})</span>`:""}</div>
+  ${miss?`<div style="text-align:right;font-size:.75rem;color:var(--mu)">환율 없는 내역은 합계에서 제외됨</div>`:""}</div>
  <div class="card"><h3 style="margin:0">➕ 지출 추가</h3>
-  <div class="row2"><input id="mfI" placeholder="항목 (예: 저녁 식사)" value="${esc(mf.item)}" oninput="mf.item=this.value" style="flex:1;min-width:140px">
+  <div class="row2"><input id="mfI" placeholder="항목" value="${esc(mf.item)}" oninput="mf.item=this.value" style="flex:1;min-width:140px">
    <select id="mfP" onchange="mf.payer=this.value"><option ${mf.payer==="김예림"?"selected":""}>김예림</option><option ${mf.payer==="전은경"?"selected":""}>전은경</option></select></div>
   <div class="row2"><input id="mfD" type="date" value="${esc(mf.date)}" onchange="onMoney('date',this.value)">
    <select id="mfC" onchange="onMoney('cur',this.value)"><option value="EUR" ${isE?"selected":""}>€ 유로</option><option value="KRW" ${!isE?"selected":""}>₩ 원화</option></select>
@@ -365,16 +358,15 @@ function moneyHTML(){
   ${isE?`<div class="row2"><span style="align-self:center;font-size:.85rem">1€ =</span>
    <input id="mfR" type="number" inputmode="decimal" step="0.01" min="0" placeholder="환율" value="${esc(mf.rate)}" oninput="onMoney('rate',this.value)" style="width:100px">
    <span style="align-self:center;font-size:.85rem">원 → ₩</span>
-   <input id="mfK" type="number" inputmode="numeric" step="1" min="0" placeholder="원화 금액" value="${esc(mf.krw)}" oninput="onMoney('krw',this.value)" style="flex:1;min-width:100px">
-   <button class="lk" onclick="mf.rate='';fetchRate()">🔄 자동</button></div>
-  <div id="mfS" style="font-size:.75rem;color:var(--mu);margin-top:6px">${esc(mf.src)}</div>`:""}
+   <input id="mfK" type="number" inputmode="numeric" step="1" min="0" placeholder="원화" value="${esc(mf.krw)}" oninput="onMoney('krw',this.value)" style="flex:1;min-width:100px">
+   <button class="lk" onclick="mf.rate='';fetchRate()">🔄</button></div>`:""}
   <button class="b" onclick="addMoney()">지출 추가</button></div>`;
 }
+
 function mfSync(){
- const r=document.getElementById("mfR"),k=document.getElementById("mfK"),s=document.getElementById("mfS");
+ const r=document.getElementById("mfR"),k=document.getElementById("mfK");
  if(r&&document.activeElement!==r)r.value=mf.rate;
  if(k&&document.activeElement!==k)k.value=mf.krw;
- if(s)s.textContent=mf.src;
 }
 function mfCalc(){const a=parseFloat(mf.amt),r=parseFloat(mf.rate);mf.krw=(a>0&&r>0)?String(Math.round(a*r)):""}
 function onMoney(f,v){
@@ -382,48 +374,28 @@ function onMoney(f,v){
  if(f==="date"){mf.rate="";mf.krw="";if(mf.cur==="EUR")fetchRate()}
  else if(f==="cur"){mf.rate="";mf.krw="";mf.src="";renderContent();if(v==="EUR")fetchRate()}
  else if(f==="amt"){mfCalc();mfSync()}
- else if(f==="rate"){mf.src="✍️ 환율을 직접 입력했어요";mfCalc();mfSync()}
- else if(f==="krw"){const a=parseFloat(mf.amt),k=parseFloat(v);if(a>0&&k>0)mf.rate=(k/a).toFixed(2);mf.src="✍️ 원화 금액을 직접 입력했어요";mfSync()}
+ else if(f==="rate"){mfCalc();mfSync()}
+ else if(f==="krw"){const a=parseFloat(mf.amt),k=parseFloat(v);if(a>0&&k>0)mf.rate=(k/a).toFixed(2);mfSync()}
 }
 async function fetchRate(){
  const seq=++rateSeq,d=mf.date||todayStr(),q=/^\d{4}-\d{2}-\d{2}$/.test(d)?d:todayStr(),fut=q>todayStr();
- mf.src="⏳ "+d+" 환율 불러오는 중...";mfSync();
- const ok=(r,label,dt)=>{mf.rate=Number(r).toFixed(2);mfCalc();mf.src=`${label} ${dt} 기준${fut?" · 미래 날짜라 최신값":""} · 수정 가능`;mfSync()};
- /* 1순위: 하나은행 매매기준율 (구글 시트 스크립트가 하나은행에서 읽어 옴) */
- if(online()){
-  try{
-   const j=await(await fetch(`${GAS_URL}?fx=${q}`)).json();
-   if(seq!==rateSeq)return;
-   if(j&&j.rate>0){ok(j.rate,"✅ 하나은행 매매기준율(최종 고시)",j.date);return}
-  }catch(e){}
- }
- /* 2순위: 유럽중앙은행 고시 환율 */
- for(const base of["https://api.frankfurter.dev/v1","https://api.frankfurter.app"]){
-  try{
-   const j=await(await fetch(`${base}/${fut?"latest":q}?base=EUR&symbols=KRW`)).json(),r=j&&j.rates&&j.rates.KRW;
-   if(seq!==rateSeq)return;
-   if(r>0){ok(r,"⚠️ 하나은행 조회 실패 → 유럽중앙은행 환율",j.date);return}
-  }catch(e){}
- }
- if(seq===rateSeq){mf.src="⚠️ 환율 자동 조회 실패 — 환율이나 원화 금액을 직접 입력하세요";mfSync()}
+ if(online()){try{const j=await(await fetch(`${GAS_URL}?fx=${q}`)).json();if(seq===rateSeq&&j&&j.rate>0){mf.rate=Number(j.rate).toFixed(2);mfCalc();mfSync();return}}catch(e){}}
+ for(const base of["https://api.frankfurter.dev/v1","https://api.frankfurter.app"]){try{const j=await(await fetch(`${base}/${fut?"latest":q}?base=EUR&symbols=KRW`)).json(),r=j&&j.rates&&j.rates.KRW;if(seq===rateSeq&&r>0){mf.rate=r.toFixed(2);mfCalc();mfSync();return}}catch(e){}}
 }
 function addMoney(){
  const a=parseFloat(mf.amt);
  if(!mf.item.trim()){alert("항목을 입력하세요");return}
  if(!(a>0)){alert("금액을 입력하세요");return}
  let row;
- if(mf.cur==="EUR"){
-  const r=parseFloat(mf.rate),k=parseFloat(mf.krw);
-  if(!(r>0)||!(k>0)){alert("환율(또는 원화 금액)이 비어 있어요. 🔄 자동을 누르거나 직접 입력하세요.");return}
-  row=[mf.item.trim(),mf.payer,a,"EUR",r,Math.round(k),mf.date]
- }else row=[mf.item.trim(),mf.payer,a,"KRW","",Math.round(a),mf.date];
+ if(mf.cur==="EUR"){const r=parseFloat(mf.rate),k=parseFloat(mf.krw);if(!(r>0)||!(k>0)){alert("환율 정보가 필요해요.");return}row=[mf.item.trim(),mf.payer,a,"EUR",r,Math.round(k),mf.date]}
+ else row=[mf.item.trim(),mf.payer,a,"KRW","",Math.round(a),mf.date];
  mf={...mf,item:"",amt:"",rate:"",krw:"",src:""};
  saveToSheet("정산",row);
 }
 function addCheck(){const t=prompt("준비물");if(t)saveToSheet("체크리스트",[t])}
 
 const val=id=>document.getElementById(id).value.trim();
-async function post(b){status("⏳ 저장 중...");try{await fetch(GAS_URL,{method:"POST",body:JSON.stringify(b)});status("✅ 저장됨 · 일행 화면에도 반영돼요")}catch(e){status("⚠️ 저장 실패")}}
+async function post(b){status("⏳ 저장 중...");try{await fetch(GAS_URL,{method:"POST",body:JSON.stringify(b)});status("✅ 저장됨")}catch(e){status("⚠️ 저장 실패")}}
 async function addRow(k){
  if(!online()){alert("배포 URL을 넣어주세요!");return}
  let row;
@@ -432,37 +404,29 @@ async function addRow(k){
  await post({type:SHN[k],rowData:row});await loadData();renderContent();
 }
 async function delRow(k,i){
- const r=sharedData[k][i];if(!r||!confirm("삭제할까요? (일행 화면에서도 사라져요)"))return;
+ const r=sharedData[k][i];if(!r||!confirm("삭제할까요?"))return;
  await post({type:"삭제",sheet:SHN[k],row:i+1,expect:r.map(String)});await loadData();renderContent();
 }
 
 const CITIES={P:["파리",1,"Paris"],C:["콜마르",4,"Colmar"],S:["스트라스부르",4,"Strasbourg"],H:["하이델베르크",5,"Heidelberg"],B:["브뤼셀",6,"Brussels"],K:["쾰른",7,"Cologne"],G:["겐트",8,"Ghent"],R:["브뤼헤",8,"Bruges"]};
 const STAYC={P:[1,4],S:[4,5],B:[5,9]};
-// [이름, 한줄 설명, 지도 검색어]  ※ 참고용 추천이에요. 영업·가격·예약은 출발 전에 꼭 확인하세요.
 const REC={
-P:{r:[["Le Comptoir du Relais","생제르맹 지역 클래식 비스트로 (2/17 카페 드 플로르 근처)","Le Comptoir du Relais Paris"],["Café des Ministères","7구 정통 프랑스식 (오르세·에펠탑 쪽)","Café des Ministères Paris"],["Bistrot Belhara","에펠탑 근처 비스트로 (간판이 작아요)","Bistrot Belhara Paris"]],
- h:[["Okko Hotels Paris Gare de l'Est","동역 근처 · 2/19 새벽 콜마르행 출발에 편해요","Okko Hotels Paris Gare de l'Est"],["Ibis Styles Paris Gare de l'Est TGV","동역 맞은편 · 가성비","Ibis Styles Paris Gare de l'Est TGV"],["Hôtel Kabanel","동역·북역 사이 · 지하철 5분","Hôtel Kabanel Paris"]]},
-C:{r:[["Wistub Brenner","미쉐린 빕 구르망 알자스 윈스튜브 (쁘띠 베니스 한 블록 안쪽)","Wistub Brenner Colmar"],["Au Koïfhus","구시가지 알자스 요리","Au Koïfhus Colmar"],["Restaurant Maison des Têtes","머리의 집 건물 안 식당","Maison des Têtes Colmar restaurant"]]},
-S:{r:[["Maison Kammerzell","대성당 옆 역사적 건물 · 슈크루트로 유명","Maison Kammerzell Strasbourg"],["Chez Yvonne","알자스 전통 윈스튜브","Chez Yvonne Strasbourg"],["Au Pont Corbeau","알자스 전통 식당","Au Pont Corbeau Strasbourg"]],
- h:[["Hôtel Hannong","TGV역 도보 5분 · 대성당·쁘띠 프랑스 가까워요","Hôtel Hannong Strasbourg"],["Hôtel Gutenberg","대성당 근처 중급 호텔","Hôtel Gutenberg Strasbourg"],["Hôtel & Spa Régent Petite France","쁘띠 프랑스 운하 앞 · 고급","Régent Petite France Strasbourg"]]},
-H:{r:[["Zum Roten Ochsen","하이델베르크 대표 전통 선술집","Zum Roten Ochsen Heidelberg"],["Zum Güldenen Schaf","구시가지 독일 가정식","Zum Güldenen Schaf Heidelberg"],["Schnitzelbank","슈니첼 등 독일 가정식","Schnitzelbank Heidelberg"]]},
-B:{r:[["Fin de Siècle","벨기에 전통 요리 · 그랑플라스 도보권","Fin de Siècle Brussels"],["Aux Armes de Bruxelles","벨기에 전통 요리 (홍합·스튜)","Aux Armes de Bruxelles"],["Chez Léon","홍합 요리로 유명 · 그랑플라스 근처","Chez Léon Brussels"]],
- h:[["Warwick Brussels – Grand Place","중앙역·그랑플라스 도보권","Warwick Brussels Grand Place"],["Motel One Brussels","왕립 거리 · 가성비 좋은 디자인 호텔","Motel One Brussels"],["ibis Brussels off Grand'Place","그랑플라스 150m · 가성비","ibis Brussels off Grand'Place"]]},
-K:{r:[["Früh am Dom","쾰른 대성당 앞 브라우하우스 (쾰슈 맥주)","Früh am Dom Köln"],["Brauhaus Sion","쾰른 전통 브라우하우스","Brauhaus Sion Köln"],["Gaffel am Dom","대성당 근처 브라우하우스","Gaffel am Dom Köln"]]},
-G:{r:[["Het Waterhuis aan de Bierkant","강변 맥주·벨기에 요리","Het Waterhuis aan de Bierkant Gent"],["Brasserie Pakhuis","대형 브라세리","Brasserie Pakhuis Gent"],["Taverne Keizershof","플랑드르 전통 요리 (워터주이)","Taverne Keizershof Gent"]]},
-R:{r:[["Cambrinus","맥주와 플랑드르 요리","Cambrinus Brugge"],["Café Vlissinghe","브뤼헤에서 가장 오래된 카페로 알려진 곳","Café Vlissinghe Brugge"],["De Vlaamsche Pot","플랑드르 전통 스튜","De Vlaamsche Pot Brugge"]]}
+P:{r:[["Le Comptoir du Relais","전통 비스트로","Le Comptoir du Relais Paris"],["Café des Ministères","프랑스식","Café des Ministères Paris"]],h:[["Okko Hotels Paris","동역 근처","Okko Hotels Paris Gare de l'Est"]]},
+C:{r:[["Wistub Brenner","알자스 요리","Wistub Brenner Colmar"]],h:[]},
+S:{r:[["Maison Kammerzell","대성당 옆","Maison Kammerzell Strasbourg"]],h:[["Hôtel Hannong","시내 중심","Hôtel Hannong Strasbourg"]]},
+H:{r:[["Zum Roten Ochsen","전통 선술집","Zum Roten Ochsen Heidelberg"]],h:[]},
+B:{r:[["Fin de Siècle","벨기에 요리","Fin de Siècle Brussels"]],h:[["Warwick Brussels","그랑플라스 근처","Warwick Brussels Grand Place"]]},
+K:{r:[["Früh am Dom","대성당 앞","Früh am Dom Köln"]],h:[]},
+G:{r:[["Het Waterhuis","강변 맥주","Het Waterhuis aan de Bierkant Gent"]],h:[]},
+R:{r:[["Cambrinus","맥주와 요리","Cambrinus Brugge"]],h:[]}
 };
 const dayOpts=sel=>D.map((x,i)=>`<option value="${i}" ${i==sel?"selected":""}>${i+1}일차 ${x[0]}</option>`).join("");
 let rc={rest:"P",stay:"P"};
 function recCard(k){
- const cs=Object.keys(k==="rest"?CITIES:STAYC),c=cs.includes(rc[k])?rc[k]:cs[0],list=REC[c][k==="rest"?"r":"h"],en=CITIES[c][2];
- const sel=k==="rest"?`<div class="row2"><select id="recD">${dayOpts(CITIES[c][1])}</select><span style="align-self:center;font-size:.85rem">에 추가</span></div>`
-  :`<div class="row2"><select id="recI">${dayOpts(STAYC[c][0])}</select><span style="align-self:center;font-size:.85rem">체크인</span></div><div class="row2"><select id="recO">${dayOpts(STAYC[c][1])}</select><span style="align-self:center;font-size:.85rem">체크아웃</span></div>`;
- return `<div class="card"><h3 style="margin:0">⭐ 도시별 ${k==="rest"?"식당":"숙소"} 추천</h3>
-  <div class="row2"><select onchange="rc.${k}=this.value;renderContent()">${cs.map(x=>`<option value="${x}" ${x==c?"selected":""}>${CITIES[x][0]}</option>`).join("")}</select></div>${sel}
-  ${list.map((e,i)=>`<div class="pl"><div class="nm"><b>${esc(e[0])}</b><div style="font-size:.8rem;color:var(--mu)">${esc(e[1])}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(e[2])}">🗺</a><button onclick="addRec('${k}','${c}',${i})">＋ 내 목록</button></div></div>`).join("")}
-  <div class="row2"><a class="lk" target="_blank" rel="noopener" href="https://www.tripadvisor.com/Search?q=${E(en+(k==="rest"?" restaurants":" hotels"))}">트립어드바이저에서 더 보기</a><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E((k==="rest"?"restaurants in ":"hotels in ")+en)}">구글 지도에서 더 보기</a></div>
-  <div style="font-size:.75rem;color:var(--mu);margin-top:8px">참고용 추천이에요. 영업·가격·예약 가능 여부는 출발 전에 꼭 확인하세요.</div></div>`;
+ const cs=Object.keys(k==="rest"?CITIES:STAYC),c=cs.includes(rc[k])?rc[k]:cs[0],list=REC[c][k==="rest"?"r":"h"];
+ return `<div class="card"><h3 style="margin:0">⭐ 도시별 추천</h3>
+  <div class="row2"><select onchange="rc.${k}=this.value;renderContent()">${cs.map(x=>`<option value="${x}" ${x==c?"selected":""}>${CITIES[x][0]}</option>`).join("")}</select></div>
+  ${list.map((e,i)=>`<div class="pl"><div class="nm"><b>${esc(e[0])}</b><div style="font-size:.8rem;color:var(--mu)">${esc(e[1])}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(e[2])}">🗺</a><button onclick="addRec('${k}','${c}',${i})">＋</button></div></div>`).join("")}</div>`;
 }
 async function addRec(k,c,i){
  if(!online()){alert("배포 URL을 넣어주세요!");return}
@@ -471,17 +435,8 @@ async function addRec(k,c,i){
  await post({type:SHN[k],rowData:row});await loadData();renderContent();
 }
 
-/* 15초마다 일행의 변경 사항 가져오기 (입력 중에는 건너뜀) */
-setInterval(async()=>{
- if(!online())return;
- const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
- const r=await getAll();if(!r)return;
- const ch=JSON.stringify(r.plan)!==JSON.stringify(plan)||JSON.stringify([r.memo,r.money,r.check,r.rest,r.stay])!==JSON.stringify([sharedData.memo,sharedData.money,sharedData.check,sharedData.rest,sharedData.stay]);
- sharedData=r;if(okPlan(r.plan))plan=r.plan;
- if(ch)renderAll();
-},15000);
-
+setInterval(async()=>{if(!online())return;const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;const r=await getAll();if(r){sharedData=r;if(okPlan(r.plan))plan=r.plan;renderAll()}},15000);
 init();
 </script>
 </body>
-</ht
+</html>
