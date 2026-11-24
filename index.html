@@ -65,22 +65,17 @@ textarea{width:100%;border-radius:12px;padding:12px;margin-top:10px;resize:none}
 </div>
 <div class="tabs" id="day-tabs"></div>
 <div class="f-tabs" id="feature-tabs">
-<button data-f="info" class="on" onclick="window.setF('info')">📋 일정</button>
-<button data-f="rest" onclick="window.setF('rest')">🍴 식당</button>
-<button data-f="stay" onclick="window.setF('stay')">🛏️ 숙소</button>
-<button data-f="money" onclick="window.setF('money')">💰 정산</button>
-<button data-f="check" onclick="window.setF('check')">✅ 준비물</button>
+<button data-f="info" class="on" onclick="setF('info')">📋 일정</button>
+<button data-f="rest" onclick="setF('rest')">🍴 식당</button>
+<button data-f="stay" onclick="setF('stay')">🛏️ 숙소</button>
+<button data-f="money" onclick="setF('money')">💰 정산</button>
+<button data-f="check" onclick="setF('check')">✅ 준비물</button>
 </div>
 </div>
 <div id="view"></div>
 </div>
 </div>
 
-<script>
-/* 오류가 나면 화면 맨 위(상태줄)에 내용을 보여줘요 */
-window.addEventListener("error",function(e){var s=document.getElementById("sync-status");if(s&&!window.__firstErr){window.__firstErr=1;s.style.color="#ffd166";s.textContent="⚠️ 첫 오류: "+e.message+" (줄 "+e.lineno+")"}});
-window.addEventListener("unhandledrejection",function(e){var s=document.getElementById("sync-status");if(s){s.style.color="#ffd166";s.textContent="⚠️ 오류: "+(e.reason&&e.reason.message||e.reason)}});
-</script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <script>
 const GAS_URL="https://script.google.com/macros/s/AKfycbyKjR9esF9OZDWL19tGMZKzD6IlPAho9H624_YLb7735r_7okYGExB0t_-sojZWn7it/exec";
@@ -121,24 +116,18 @@ async function init(){renderAll();await loadData();renderAll()}
 function renderTabs(){document.getElementById("day-tabs").innerHTML=D.map((d,i)=>`<button class="${i==cur?"on":""}" onclick="setDay(${i})">${i+1}일차</button>`).join("")}
 function renderAll(){renderTabs();updateMap();renderContent()}
 function setDay(i){cur=i;cand=[];renderAll()}
-window.setF=function(f){curF=f;document.querySelectorAll("#feature-tabs button").forEach(b=>b.classList.toggle("on",b.dataset.f===f));renderContent()};
+function setF(f){curF=f;document.querySelectorAll("#feature-tabs button").forEach(b=>b.classList.toggle("on",b.dataset.f==f));renderContent()}
 
 function updateMap(){
  if(map)map.remove();
  map=L.map("map",{scrollWheelZoom:false});
+ L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",{attribution:"Esri"}).addTo(map);
  const a=plan.days[cur].places,g=a.filter(p=>p.la!=null),pts=g.map(p=>[p.la,p.lo]);
- /* 장소가 전부 한국 안이면(예: 1일차 인천) 한국 지도가 잘 나오는 OpenStreetMap, 그 외엔 Esri */
- const kr=pts.length&&pts.every(([la,lo])=>la>32&&la<39.5&&lo>123&&lo<132.5);
- if(kr)L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap",maxZoom:19}).addTo(map);
- else L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",{attribution:"Esri"}).addTo(map);
  if(!pts.length){map.setView([48.5,5],4);return}
  L.polyline(pts,{color:"#2f7de1",weight:3,dashArray:"5, 5"}).addTo(map);
  a.forEach((p,i)=>{if(p.la==null)return;
   L.marker([p.la,p.lo],{icon:L.divIcon({className:"",html:`<div class="pin ${p.t}">${i+1}</div>`,iconSize:[26,26]})}).addTo(map).bindPopup(`<b>${esc(p.n)}</b>`)});
- const bd=L.latLngBounds(pts);
- /* 장소가 한 곳뿐이면 너무 확대하지 않고 주변이 보이게 */
- if(bd.getNorthEast().equals(bd.getSouthWest()))map.setView(pts[0],10);
- else map.fitBounds(bd,{padding:[50,50],maxZoom:15});
+ map.fitBounds(L.latLngBounds(pts),{padding:[50,50],maxZoom:15});
 }
 
 /* ---------- 공동 일정 편집 ---------- */
@@ -320,8 +309,8 @@ function renderContent(){
    <div class="row2"><input id="rM" placeholder="메모 (예약 시간, 메뉴 등)" style="flex:1"></div>
    <button class="b" onclick="addRow('rest')">시트에 추가</button></div>`;
  }else if(curF==="stay"){
-  const rows=sharedData.stay.map((r,i)=>({r,i})).slice(1).filter(x=>x.r[0]).sort((a,b)=>D.findIndex(x=>x[0]==stayOf(a.r).i)-D.findIndex(x=>x[0]==stayOf(b.r).i));
-  v.innerHTML=`${recCard("stay")}<div class="card"><h2 style="margin:0 0 6px">🛏️ 숙소 목록</h2>${rows.map(({r,i})=>{const h=stayOf(r);return`<div class="pl"><div class="nm"><b>🛏️ ${esc(h.n)}</b><div style="font-size:.8rem;color:var(--mu)">${esc(h.i)} → ${esc(h.o)}</div><div style="font-size:.8rem">${esc(h.a)} ${esc(h.m)}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(h.a||h.n)}">🗺</a><button onclick="delRow('stay',${i})">✕</button></div></div>`}).join("")||'<div style="color:var(--mu)">아직 없어요. 아래에서 추가하세요.</div>'}</div>
+  const rows=sharedData.stay.map((r,i)=>({r,i})).slice(1).filter(x=>x.r[0]).sort((a,b)=>D.findIndex(x=>x[0]==a.r[1])-D.findIndex(x=>x[0]==b.r[1]));
+  v.innerHTML=`${recCard("stay")}<div class="card"><h2 style="margin:0 0 6px">🛏️ 숙소 목록</h2>${rows.map(({r,i})=>`<div class="pl"><div class="nm"><b>🛏️ ${esc(r[0])}</b><div style="font-size:.8rem;color:var(--mu)">${esc(r[1])} → ${esc(r[2])}</div><div style="font-size:.8rem">${esc(r[3])} ${esc(r[4])}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(r[3]||r[0])}">🗺</a><button onclick="delRow('stay',${i})">✕</button></div></div>`).join("")||'<div style="color:var(--mu)">아직 없어요. 아래에서 추가하세요.</div>'}</div>
    <div class="card"><h3 style="margin:0">➕ 숙소 추가</h3>
    <div class="row2"><input id="sN" placeholder="숙소 이름" style="flex:1"></div>
    <div class="row2"><input id="sA" placeholder="주소 (지도 검색에 쓰여요)" style="flex:1"></div>
@@ -428,7 +417,7 @@ function addMoney(){
   if(!(r>0)||!(k>0)){alert("환율(또는 원화 금액)이 비어 있어요. 🔄 자동을 누르거나 직접 입력하세요.");return}
   row=[mf.item.trim(),mf.payer,a,"EUR",r,Math.round(k),"'"+mf.date]
  }else row=[mf.item.trim(),mf.payer,a,"KRW","",Math.round(a),"'"+mf.date];
- mf=Object.assign({},mf,{item:"",amt:"",rate:"",krw:"",src:""});
+ mf={...mf,item:"",amt:"",rate:"",krw:"",src:""};
  saveToSheet("정산",row);
 }
 function addCheck(){const t=prompt("준비물");if(t)saveToSheet("체크리스트",[t])}
@@ -471,9 +460,6 @@ K:{r:[["Früh am Dom","쾰른 대성당 앞 브라우하우스 (쾰슈 맥주)",
 G:{r:[["Het Waterhuis aan de Bierkant","강변 맥주·벨기에 요리","Het Waterhuis aan de Bierkant Gent"],["Brasserie Pakhuis","대형 브라세리","Brasserie Pakhuis Gent"],["Taverne Keizershof","플랑드르 전통 요리 (워터주이)","Taverne Keizershof Gent"]]},
 R:{r:[["Cambrinus","맥주와 플랑드르 요리","Cambrinus Brugge"],["Café Vlissinghe","브뤼헤에서 가장 오래된 카페로 알려진 곳","Café Vlissinghe Brugge"],["De Vlaamsche Pot","플랑드르 전통 스튜","De Vlaamsche Pot Brugge"]]}
 };
-/* 숙소 행 해석: 열 순서가 [이름,주소,체크인,체크아웃,메모](앱에서 추가) 또는 [이름,체크인,체크아웃,주소,메모](예전 방식) 둘 다 지원 */
-const isDay=x=>D.some(d=>d[0]==x);
-const stayOf=r=>isDay(r[1])?{n:r[0],i:r[1],o:r[2],a:r[3],m:r[4]}:{n:r[0],a:r[1],i:r[2],o:r[3],m:r[4]};
 const dayOpts=sel=>D.map((x,i)=>`<option value="${i}" ${i==sel?"selected":""}>${i+1}일차 ${x[0]}</option>`).join("");
 let rc={rest:"P",stay:"P"};
 function recCard(k){
@@ -495,10 +481,4 @@ async function addRec(k,c,i){
 
 /* 15초마다 일행의 변경 사항 가져오기 (입력 중에는 건너뜀) */
 setInterval(async()=>{
- if(!online())return;
- const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
- const r=await getAll();if(!r)return;
- const ch=JSON.stringify(r.plan)!==JSON.stringify(plan)||JSON.stringify([r.memo,r.money,r.check,r.rest,r.stay])!==JSON.stringify([sharedData.memo,sharedData.money,sharedData.check,sharedData.rest,sharedData.stay]);
- sharedData=r;if(okPlan(r.plan))plan=r.plan;
- if(ch)renderAll();
-}
+ if(!online())
