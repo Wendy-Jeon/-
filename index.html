@@ -98,7 +98,7 @@ const online=()=>GAS_URL.startsWith("http");
 const status=s=>document.getElementById("sync-status").innerText=s;
 let cur=0,curF="info",map=null,mode="transit",cand=[];
 let sharedData={memo:[],money:[],check:[],rest:[],stay:[],plan:null};
-const SHN={rest:"식당",stay:"숙소"};
+const SHN={rest:"식당",stay:"숙소",money:"정산"};
 let plan={v:0,days:D.map((d,i)=>({places:d[2].map((p,j)=>({id:"d"+i+"p"+j,n:p[0],la:p[1],lo:p[2],t:"a",b:0}))}))};
 const okPlan=p=>p&&p.days&&p.days.length==D.length;
 const norm=r=>{["memo","money","check","rest","stay"].forEach(k=>r[k]=r[k]||[]);return r};
@@ -121,13 +121,19 @@ function setF(f){curF=f;document.querySelectorAll("#feature-tabs button").forEac
 function updateMap(){
  if(map)map.remove();
  map=L.map("map",{scrollWheelZoom:false});
- L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",{attribution:"Esri"}).addTo(map);
  const a=plan.days[cur].places,g=a.filter(p=>p.la!=null),pts=g.map(p=>[p.la,p.lo]);
+ /* 장소가 전부 한국 안이면(예: 1일차 인천) 한국 지도가 잘 나오는 OpenStreetMap, 그 외엔 Esri */
+ const kr=pts.length&&pts.every(([la,lo])=>la>32&&la<39.5&&lo>123&&lo<132.5);
+ if(kr)L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png",{attribution:"© OpenStreetMap",maxZoom:19}).addTo(map);
+ else L.tileLayer("https://server.arcgisonline.com/ArcGIS/rest/services/World_Street_Map/MapServer/tile/{z}/{y}/{x}",{attribution:"Esri"}).addTo(map);
  if(!pts.length){map.setView([48.5,5],4);return}
  L.polyline(pts,{color:"#2f7de1",weight:3,dashArray:"5, 5"}).addTo(map);
  a.forEach((p,i)=>{if(p.la==null)return;
   L.marker([p.la,p.lo],{icon:L.divIcon({className:"",html:`<div class="pin ${p.t}">${i+1}</div>`,iconSize:[26,26]})}).addTo(map).bindPopup(`<b>${esc(p.n)}</b>`)});
- map.fitBounds(L.latLngBounds(pts),{padding:[50,50],maxZoom:15});
+ const bd=L.latLngBounds(pts);
+ /* 장소가 한 곳뿐이면 너무 확대하지 않고 주변이 보이게 */
+ if(bd.getNorthEast().equals(bd.getSouthWest()))map.setView(pts[0],10);
+ else map.fitBounds(bd,{padding:[50,50],maxZoom:15});
 }
 
 /* ---------- 공동 일정 편집 ---------- */
@@ -309,8 +315,8 @@ function renderContent(){
    <div class="row2"><input id="rM" placeholder="메모 (예약 시간, 메뉴 등)" style="flex:1"></div>
    <button class="b" onclick="addRow('rest')">시트에 추가</button></div>`;
  }else if(curF==="stay"){
-  const rows=sharedData.stay.map((r,i)=>({r,i})).slice(1).filter(x=>x.r[0]).sort((a,b)=>D.findIndex(x=>x[0]==a.r[1])-D.findIndex(x=>x[0]==b.r[1]));
-  v.innerHTML=`${recCard("stay")}<div class="card"><h2 style="margin:0 0 6px">🛏️ 숙소 목록</h2>${rows.map(({r,i})=>`<div class="pl"><div class="nm"><b>🛏️ ${esc(r[0])}</b><div style="font-size:.8rem;color:var(--mu)">${esc(r[1])} → ${esc(r[2])}</div><div style="font-size:.8rem">${esc(r[3])} ${esc(r[4])}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(r[3]||r[0])}">🗺</a><button onclick="delRow('stay',${i})">✕</button></div></div>`).join("")||'<div style="color:var(--mu)">아직 없어요. 아래에서 추가하세요.</div>'}</div>
+  const rows=sharedData.stay.map((r,i)=>({r,i})).slice(1).filter(x=>x.r[0]).sort((a,b)=>D.findIndex(x=>x[0]==stayOf(a.r).i)-D.findIndex(x=>x[0]==stayOf(b.r).i));
+  v.innerHTML=`${recCard("stay")}<div class="card"><h2 style="margin:0 0 6px">🛏️ 숙소 목록</h2>${rows.map(({r,i})=>{const h=stayOf(r);return`<div class="pl"><div class="nm"><b>🛏️ ${esc(h.n)}</b><div style="font-size:.8rem;color:var(--mu)">${esc(h.i)} → ${esc(h.o)}</div><div style="font-size:.8rem">${esc(h.a)} ${esc(h.m)}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(h.a||h.n)}">🗺</a><button onclick="delRow('stay',${i})">✕</button></div></div>`}).join("")||'<div style="color:var(--mu)">아직 없어요. 아래에서 추가하세요.</div>'}</div>
    <div class="card"><h3 style="margin:0">➕ 숙소 추가</h3>
    <div class="row2"><input id="sN" placeholder="숙소 이름" style="flex:1"></div>
    <div class="row2"><input id="sA" placeholder="주소 (지도 검색에 쓰여요)" style="flex:1"></div>
@@ -339,18 +345,18 @@ function saveMemo(){saveToSheet("메모",[cur+1,document.getElementById("memoInp
    시트 열 순서: 항목 | 결제자 | 금액 | 통화 | 환율 | 원화 | 날짜  (기존 3열 행은 유로로 간주) */
 const todayStr=()=>new Date().toLocaleDateString("sv-SE",{timeZone:"Asia/Seoul"});
 const won=n=>Number(n).toLocaleString("ko-KR");
-const fmtD=d=>{if(!d)return"";d=String(d);if(/^\d{4}-\d{2}-\d{2}$/.test(d))return d;const t=new Date(d);return isNaN(t)?d:t.toLocaleDateString("sv-SE",{timeZone:"Asia/Seoul"})};
+const fmtD=d=>{if(!d)return"";d=String(d).replace(/^'/,"");if(/^\d{4}-\d{2}-\d{2}$/.test(d))return d;const t=new Date(d);return isNaN(t)?d:t.toLocaleDateString("sv-SE",{timeZone:"Asia/Seoul"})};
 let mf={item:"",payer:"김예림",date:todayStr(),cur:"EUR",amt:"",rate:"",krw:"",src:""},rateSeq=0;
-function moneyRow(e){
+function moneyRow({r:e,i}){
  const c=e[3]||"EUR",a=Number(e[2]||0),k=(e[5]!==undefined&&e[5]!=="")?Number(e[5]):null,d=fmtD(e[6]);
  const main=c==="KRW"?`₩ ${won(a)}`:`€ ${a.toFixed(2)}`;
  const sub=c==="EUR"?(k!=null?`≈ ₩ ${won(k)} <span style="color:var(--mu)">(1€=${esc(e[4])}원)</span>`:`<span style="color:var(--mu)">환율 미적용</span>`):"";
- return `<div class="expense-row"><span>${esc(e[0])} (${esc(e[1])})${d?`<div style="font-size:.75rem;color:var(--mu)">${esc(d)}</div>`:""}</span><div style="text-align:right"><b>${main}</b>${sub?`<div style="font-size:.78rem">${sub}</div>`:""}</div></div>`;
+ return `<div class="expense-row" style="align-items:center;gap:8px"><span style="flex:1">${esc(e[0])} (${esc(e[1])})${d?`<div style="font-size:.75rem;color:var(--mu)">${esc(d)}</div>`:""}</span><div style="text-align:right"><b>${main}</b>${sub?`<div style="font-size:.78rem">${sub}</div>`:""}</div><div class="ctl"><button onclick="delRow('money',${i})">✕</button></div></div>`;
 }
 function moneyHTML(){
- const ex=sharedData.money.slice(1).filter(e=>e[0]||e[2]);
+ const ex=sharedData.money.map((r,i)=>({r,i})).slice(1).filter(x=>x.r[0]||x.r[2]);
  let eur=0,krw=0,miss=0;
- ex.forEach(e=>{const c=e[3]||"EUR",a=Number(e[2]||0),k=(e[5]!==undefined&&e[5]!=="")?Number(e[5]):null;
+ ex.forEach(({r:e})=>{const c=e[3]||"EUR",a=Number(e[2]||0),k=(e[5]!==undefined&&e[5]!=="")?Number(e[5]):null;
   if(c==="EUR"){eur+=a;if(k==null)miss++;else krw+=k}else krw+=(k!=null?k:a)});
  const isE=mf.cur==="EUR";
  return `<div class="card"><h2>💰 정산</h2>${ex.map(moneyRow).join("")||'<div style="color:var(--mu)">아직 없어요.</div>'}
@@ -415,15 +421,23 @@ function addMoney(){
  if(mf.cur==="EUR"){
   const r=parseFloat(mf.rate),k=parseFloat(mf.krw);
   if(!(r>0)||!(k>0)){alert("환율(또는 원화 금액)이 비어 있어요. 🔄 자동을 누르거나 직접 입력하세요.");return}
-  row=[mf.item.trim(),mf.payer,a,"EUR",r,Math.round(k),mf.date]
- }else row=[mf.item.trim(),mf.payer,a,"KRW","",Math.round(a),mf.date];
+  row=[mf.item.trim(),mf.payer,a,"EUR",r,Math.round(k),"'"+mf.date]
+ }else row=[mf.item.trim(),mf.payer,a,"KRW","",Math.round(a),"'"+mf.date];
  mf={...mf,item:"",amt:"",rate:"",krw:"",src:""};
  saveToSheet("정산",row);
 }
 function addCheck(){const t=prompt("준비물");if(t)saveToSheet("체크리스트",[t])}
 
 const val=id=>document.getElementById(id).value.trim();
-async function post(b){status("⏳ 저장 중...");try{await fetch(GAS_URL,{method:"POST",body:JSON.stringify(b)});status("✅ 저장됨 · 일행 화면에도 반영돼요")}catch(e){status("⚠️ 저장 실패")}}
+async function post(b){
+ status("⏳ 저장 중...");
+ try{
+  const r=await fetch(GAS_URL,{method:"POST",body:JSON.stringify(b)});
+  let j=null;try{j=await r.json()}catch(e){}
+  if(j&&j.ok===false){console.log("서버 거부:",j);status("⚠️ 저장 실패: "+(j.error==="changed"?"시트 내용이 달라서 거부됨":j.error));return j}
+  status("✅ 저장됨 · 일행 화면에도 반영돼요");return j||{ok:true};
+ }catch(e){status("⚠️ 저장 실패");return{ok:false,error:String(e)}}
+}
 async function addRow(k){
  if(!online()){alert("배포 URL을 넣어주세요!");return}
  let row;
@@ -433,7 +447,7 @@ async function addRow(k){
 }
 async function delRow(k,i){
  const r=sharedData[k][i];if(!r||!confirm("삭제할까요? (일행 화면에서도 사라져요)"))return;
- await post({type:"삭제",sheet:SHN[k],row:i+1,expect:r.map(String)});await loadData();renderContent();
+ const res=await post({type:"삭제",sheet:SHN[k],row:i+1,expect:r.map(String)});await loadData();renderContent();if(res&&res.ok===false)alert("삭제되지 않았어요: "+(res.error==="changed"?"시트 내용과 달라요."+(res.cur?"\n시트: "+res.cur.join(" | ")+"\n화면: "+res.exp.join(" | "):"\n(Code.gs를 새 버전으로 배포하면 어느 값이 다른지 여기에 표시돼요)"):res.error));
 }
 
 const CITIES={P:["파리",1,"Paris"],C:["콜마르",4,"Colmar"],S:["스트라스부르",4,"Strasbourg"],H:["하이델베르크",5,"Heidelberg"],B:["브뤼셀",6,"Brussels"],K:["쾰른",7,"Cologne"],G:["겐트",8,"Ghent"],R:["브뤼헤",8,"Bruges"]};
@@ -452,6 +466,9 @@ K:{r:[["Früh am Dom","쾰른 대성당 앞 브라우하우스 (쾰슈 맥주)",
 G:{r:[["Het Waterhuis aan de Bierkant","강변 맥주·벨기에 요리","Het Waterhuis aan de Bierkant Gent"],["Brasserie Pakhuis","대형 브라세리","Brasserie Pakhuis Gent"],["Taverne Keizershof","플랑드르 전통 요리 (워터주이)","Taverne Keizershof Gent"]]},
 R:{r:[["Cambrinus","맥주와 플랑드르 요리","Cambrinus Brugge"],["Café Vlissinghe","브뤼헤에서 가장 오래된 카페로 알려진 곳","Café Vlissinghe Brugge"],["De Vlaamsche Pot","플랑드르 전통 스튜","De Vlaamsche Pot Brugge"]]}
 };
+/* 숙소 행 해석: 열 순서가 [이름,주소,체크인,체크아웃,메모](앱에서 추가) 또는 [이름,체크인,체크아웃,주소,메모](예전 방식) 둘 다 지원 */
+const isDay=x=>D.some(d=>d[0]==x);
+const stayOf=r=>isDay(r[1])?{n:r[0],i:r[1],o:r[2],a:r[3],m:r[4]}:{n:r[0],a:r[1],i:r[2],o:r[3],m:r[4]};
 const dayOpts=sel=>D.map((x,i)=>`<option value="${i}" ${i==sel?"selected":""}>${i+1}일차 ${x[0]}</option>`).join("");
 let rc={rest:"P",stay:"P"};
 function recCard(k){
@@ -461,27 +478,4 @@ function recCard(k){
  return `<div class="card"><h3 style="margin:0">⭐ 도시별 ${k==="rest"?"식당":"숙소"} 추천</h3>
   <div class="row2"><select onchange="rc.${k}=this.value;renderContent()">${cs.map(x=>`<option value="${x}" ${x==c?"selected":""}>${CITIES[x][0]}</option>`).join("")}</select></div>${sel}
   ${list.map((e,i)=>`<div class="pl"><div class="nm"><b>${esc(e[0])}</b><div style="font-size:.8rem;color:var(--mu)">${esc(e[1])}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(e[2])}">🗺</a><button onclick="addRec('${k}','${c}',${i})">＋ 내 목록</button></div></div>`).join("")}
-  <div class="row2"><a class="lk" target="_blank" rel="noopener" href="https://www.tripadvisor.com/Search?q=${E(en+(k==="rest"?" restaurants":" hotels"))}">트립어드바이저에서 더 보기</a><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E((k==="rest"?"restaurants in ":"hotels in ")+en)}">구글 지도에서 더 보기</a></div>
-  <div style="font-size:.75rem;color:var(--mu);margin-top:8px">참고용 추천이에요. 영업·가격·예약 가능 여부는 출발 전에 꼭 확인하세요.</div></div>`;
-}
-async function addRec(k,c,i){
- if(!online()){alert("배포 URL을 넣어주세요!");return}
- const e=REC[c][k==="rest"?"r":"h"][i];
- const row=k==="rest"?[+val("recD")+1,e[0],e[1]]:[e[0],e[2],D[+val("recI")][0],D[+val("recO")][0],e[1]];
- await post({type:SHN[k],rowData:row});await loadData();renderContent();
-}
-
-/* 15초마다 일행의 변경 사항 가져오기 (입력 중에는 건너뜀) */
-setInterval(async()=>{
- if(!online())return;
- const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
- const r=await getAll();if(!r)return;
- const ch=JSON.stringify(r.plan)!==JSON.stringify(plan)||JSON.stringify([r.memo,r.money,r.check,r.rest,r.stay])!==JSON.stringify([sharedData.memo,sharedData.money,sharedData.check,sharedData.rest,sharedData.stay]);
- sharedData=r;if(okPlan(r.plan))plan=r.plan;
- if(ch)renderAll();
-},15000);
-
-init();
-</script>
-</body>
-</html>
+  <div class="row2"><a class="lk" target="_blank" rel="noopener" href="https://www.tripadvisor.com/Search?q=${E(en+(k==="rest"?" restaurants":" hotels"))}">트립어드바이저에서 더 보기</a><a class="
