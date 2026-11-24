@@ -65,11 +65,11 @@ textarea{width:100%;border-radius:12px;padding:12px;margin-top:10px;resize:none}
 </div>
 <div class="tabs" id="day-tabs"></div>
 <div class="f-tabs" id="feature-tabs">
-<button data-f="info" class="on" onclick="setF('info')">📋 일정</button>
-<button data-f="rest" onclick="setF('rest')">🍴 식당</button>
-<button data-f="stay" onclick="setF('stay')">🛏️ 숙소</button>
-<button data-f="money" onclick="setF('money')">💰 정산</button>
-<button data-f="check" onclick="setF('check')">✅ 준비물</button>
+<button data-f="info" class="on" onclick="window.setF('info')">📋 일정</button>
+<button data-f="rest" onclick="window.setF('rest')">🍴 식당</button>
+<button data-f="stay" onclick="window.setF('stay')">🛏️ 숙소</button>
+<button data-f="money" onclick="window.setF('money')">💰 정산</button>
+<button data-f="check" onclick="window.setF('check')">✅ 준비물</button>
 </div>
 </div>
 <div id="view"></div>
@@ -121,7 +121,7 @@ async function init(){renderAll();await loadData();renderAll()}
 function renderTabs(){document.getElementById("day-tabs").innerHTML=D.map((d,i)=>`<button class="${i==cur?"on":""}" onclick="setDay(${i})">${i+1}일차</button>`).join("")}
 function renderAll(){renderTabs();updateMap();renderContent()}
 function setDay(i){cur=i;cand=[];renderAll()}
-function setF(f){curF=f;document.querySelectorAll("#feature-tabs button").forEach(b=>b.classList.toggle("on",b.dataset.f==f));renderContent()}
+window.setF=function(f){curF=f;document.querySelectorAll("#feature-tabs button").forEach(b=>b.classList.toggle("on",b.dataset.f===f));renderContent()};
 
 function updateMap(){
  if(map)map.remove();
@@ -482,4 +482,23 @@ function recCard(k){
   :`<div class="row2"><select id="recI">${dayOpts(STAYC[c][0])}</select><span style="align-self:center;font-size:.85rem">체크인</span></div><div class="row2"><select id="recO">${dayOpts(STAYC[c][1])}</select><span style="align-self:center;font-size:.85rem">체크아웃</span></div>`;
  return `<div class="card"><h3 style="margin:0">⭐ 도시별 ${k==="rest"?"식당":"숙소"} 추천</h3>
   <div class="row2"><select onchange="rc.${k}=this.value;renderContent()">${cs.map(x=>`<option value="${x}" ${x==c?"selected":""}>${CITIES[x][0]}</option>`).join("")}</select></div>${sel}
-  ${list.map((e,i)=>`<div class="pl"><div class="nm"><b>$
+  ${list.map((e,i)=>`<div class="pl"><div class="nm"><b>${esc(e[0])}</b><div style="font-size:.8rem;color:var(--mu)">${esc(e[1])}</div></div><div class="ctl"><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E(e[2])}">🗺</a><button onclick="addRec('${k}','${c}',${i})">＋ 내 목록</button></div></div>`).join("")}
+  <div class="row2"><a class="lk" target="_blank" rel="noopener" href="https://www.tripadvisor.com/Search?q=${E(en+(k==="rest"?" restaurants":" hotels"))}">트립어드바이저에서 더 보기</a><a class="lk" target="_blank" rel="noopener" href="https://www.google.com/maps/search/?api=1&query=${E((k==="rest"?"restaurants in ":"hotels in ")+en)}">구글 지도에서 더 보기</a></div>
+  <div style="font-size:.75rem;color:var(--mu);margin-top:8px">참고용 추천이에요. 영업·가격·예약 가능 여부는 출발 전에 꼭 확인하세요.</div></div>`;
+}
+async function addRec(k,c,i){
+ if(!online()){alert("배포 URL을 넣어주세요!");return}
+ const e=REC[c][k==="rest"?"r":"h"][i];
+ const row=k==="rest"?[+val("recD")+1,e[0],e[1]]:[e[0],e[2],D[+val("recI")][0],D[+val("recO")][0],e[1]];
+ await post({type:SHN[k],rowData:row});await loadData();renderContent();
+}
+
+/* 15초마다 일행의 변경 사항 가져오기 (입력 중에는 건너뜀) */
+setInterval(async()=>{
+ if(!online())return;
+ const ae=document.activeElement;if(ae&&/INPUT|TEXTAREA|SELECT/.test(ae.tagName))return;
+ const r=await getAll();if(!r)return;
+ const ch=JSON.stringify(r.plan)!==JSON.stringify(plan)||JSON.stringify([r.memo,r.money,r.check,r.rest,r.stay])!==JSON.stringify([sharedData.memo,sharedData.money,sharedData.check,sharedData.rest,sharedData.stay]);
+ sharedData=r;if(okPlan(r.plan))plan=r.plan;
+ if(ch)renderAll();
+}
